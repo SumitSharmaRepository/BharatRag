@@ -12,3 +12,10 @@ DAY 2:
 → Source citations: filename + page number
 → ChromaDB handles math automatically
 → Scores improved: 0.49 → 0.784
+
+Day 3 with LangChain:
+→ rag_chain.invoke(question)
+→ One line does everything
+→ Same result
+→ This is what frameworks are for
+
