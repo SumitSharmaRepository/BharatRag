@@ -18,3 +18,15 @@ vectorstore = Chroma(embedding_function=embeddings)
 ← LangChain uses embeddings to SEARCH ChromaDB
 ← Must be SAME model as Day 2
 ← Otherwise vectors won't match
+
+
+requirements.txt  → list of packages needed
+                    anyone can install with:
+                    pip install -r requirements.txt
+                    Like pom.xml in Maven
+
+__init__.py       → marks folder as Python package
+                    enables: from src.loader import ...
+                    can contain convenience imports
+                    empty = valid, just marks package
+                    with imports = cleaner main.py
