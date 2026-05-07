@@ -30,3 +30,31 @@ __init__.py       → marks folder as Python package
                     can contain convenience imports
                     empty = valid, just marks package
                     with imports = cleaner main.py
+
+Python has no compiler — it's an interpreter.
+The correct term is: tells the Python INTERPRETER
+that this folder is a PACKAGE.
+
+Enables:
+from src.loader import load_and_chunk_pdf
+          ↑
+      This works ONLY because src/__init__.py exists
+
+create_vectorstore():
+→ Takes chunks as input
+→ Embeds them (slow — runs embedding model)
+→ Stores vectors to disk
+→ Use when: new PDF uploaded, first time indexing
+
+load_vectorstore():
+→ No chunks needed
+→ Reads existing vectors from disk (fast)
+→ Does NOT re-embed anything
+→ Use when: PDF already indexed, just want to query
+
+
+load_pdf()             → loads PDF, returns pages only
+chunk_documents()      → splits pages into chunks
+load_and_chunk_pdf()   → calls BOTH in sequence
+                         convenience wrapper
+                         one call instead of two
