@@ -19,3 +19,15 @@ Day 3 with LangChain:
 → Same result
 → This is what frameworks are for
 
+
+The 3-Day Agent Progression
+
+Day 6: retrieve → grade → retry same → fallback
+       Basic self-correction
+
+Day 7: retrieve → grade → REWRITE → retry new → fallback
+       Intelligent self-correction (Reflexion)
+
+Day 8: retrieve → grade → rewrite → retry
+                → HALLUCINATION CHECK → answer
+       Verified self-correction
