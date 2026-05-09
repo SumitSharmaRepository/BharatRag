@@ -28,6 +28,10 @@ Day 6: retrieve → grade → retry same → fallback
 Day 7: retrieve → grade → REWRITE → retry new → fallback
        Intelligent self-correction (Reflexion)
 
-Day 8: retrieve → grade → rewrite → retry
-                → HALLUCINATION CHECK → answer
-       Verified self-correction
+Day 8: Verification added
+       retrieve → grade → rewrite → retry
+               → generate → HALLUCINATION CHECK
+                          → grounded    → answer ✅
+                          → hallucinated → regenerate
+
+       

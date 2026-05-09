@@ -180,3 +180,120 @@ WHAT YOU HAVE NOW vs FULL STRUCTURE:
 Current:  everything in one file (langgraph_intro.py)
 Target:   split across agents/ nodes/ retrieval/ prompts/
 When:     Day 7-10 we refactor into this structure
+
+DAY 8
+LLM-as-a-Judge
+
+retrieve
+   ↓
+grade
+   ↓
+rewrite if needed
+   ↓
+generate
+   ↓
+hallucination_check
+   ↓
+regenerate if needed
+
+                ┌──────────┐
+                │ retrieve │
+                └────┬─────┘
+                     ↓
+                ┌──────────┐
+                │  grade   │
+                └────┬─────┘
+                     │
+      ┌──────────────┼──────────────┐
+      ↓              ↓              ↓
+┌──────────┐   ┌──────────┐   ┌──────────┐
+│ generate │   │ rewrite  │   │ fallback │
+└────┬─────┘   └────┬─────┘   └────┬─────┘
+     ↓              ↓              ↓
+┌──────────────┐  retrieve        END
+│ hallucination│
+│    check     │
+└────┬─────────┘
+     │
+ ┌───┴───────────┐
+ ↓               ↓
+END         regenerate
+                 ↓
+             generate
+
+QnA
+
+Q1 — grade_node vs hallucination_check_node
+grade_node:
+Checks: are the RETRIEVED CHUNKS relevant to the question?
+Runs:   BEFORE generation
+Input:  chunks from ChromaDB
+Output: relevant/irrelevant
+
+hallucination_check_node:
+Checks: is the GENERATED ANSWER supported by the chunks?
+Runs:   AFTER generation
+Input:  Claude's answer + chunks
+Output: grounded/hallucinated
+
+Q2 — Stricter prompt on second attempt
+
+First attempt:  normal prompt → Claude answers naturally
+                → hallucination checker catches it
+                → Claude added outside knowledge
+
+Second attempt: STRICT prompt → "Do NOT add any outside
+                knowledge. Only exact information from context."
+                → Forces Claude to stay within chunks only
+                → More likely to pass hallucination check
+
+Q3 — gen_attempts < 2 check
+ WITH gen_attempts < 2 check:
+hallucinated → regenerate (attempt 2)
+hallucinated again → return anyway (stop)
+Maximum 2 generation attempts
+
+WITHOUT gen_attempts < 2 check:
+hallucinated → regenerate → hallucinated → regenerate
+→ hallucinated → regenerate → infinite loop
+Agent never returns an answer
+Application hangs forever
+
+Q4 — LLM-as-judge definition
+
+LLM-as-judge = using a language model to evaluate
+               the output of another language model
+               (or itself with a different prompt)
+               instead of using human evaluation.
+ it's specifically about EVALUATION replacing human review. 5/10
+
+Q5 — Biryani Generation attempts: 0
+Biryani question path:
+retrieve → grade=irrelevant → rewrite
+        → retrieve → grade=irrelevant → FALLBACK
+
+Fallback runs INSTEAD of generate.
+generate_node NEVER ran.
+hallucination_check NEVER ran.
+
+generation_attempts starts at 0.
+Nobody incremented it.
+So it stayed 0.
+
+This proves:
+→ Fallback bypasses generation entirely
+→ No hallucination possible in fallback
+→ Fallback is always "grounded" by definition
+   (it's a hardcoded honest message)
+
+GO BACK ND RE READ 
+1. The STATE — what fields exist and who updates them
+2. The ROUTERS — what each return value means
+3. The FLOW — draw it on paper
+
+retrieve → grade → [router]
+                 → relevant  → generate → hallucination_check
+                                        → grounded    → END
+                                        → hallucinated → generate
+                 → irrelevant attempt 1 → rewrite → retrieve
+                 → irrelevant attempt 2 → fallback → END   
