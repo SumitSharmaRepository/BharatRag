@@ -20,9 +20,22 @@
 # ============================================
 
 import os
+os.environ["LANGCHAIN_TRACING_V2"] = "true"
+os.environ["LANGCHAIN_PROJECT"]    = "bharatrag"
 import shutil
 from dotenv import load_dotenv
 load_dotenv()
+
+
+
+
+# LangSmith tracing — reads from .env automatically
+# load_dotenv() already loaded them
+# Just verify they're set
+print(f"LangSmith tracing: "
+      f"{os.getenv('LANGSMITH_TRACING')}")
+print(f"LangSmith project: "
+      f"{os.getenv('LANGSMITH_PROJECT')}")
 
 from typing import TypedDict, List, Literal
 from langgraph.graph import StateGraph, END
