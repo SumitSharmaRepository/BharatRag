@@ -10,3 +10,6 @@ pypdf
 python-dotenv
 anthropiclanggraph
 langsmith
+fastapi
+uvicorn
+python-multipart
