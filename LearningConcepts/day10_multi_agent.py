@@ -272,18 +272,19 @@ def supervisor_node(state: MultiAgentState) -> dict:
     question = state["question"]
     print(f"\n[Supervisor] Classifying: '{question}'")
 
-    classify_prompt = f"""Classify this question into one category:
+    classify_prompt = f"""Classify this question:
 
 Question: "{question}"
 
 Categories:
-- technical: about Python, Streamlit, AI tools,
-             SmartDocs, code, APIs, deployment
-- research:  about RAG systems, CRAG, research papers,
-             academic concepts, benchmarks, models
-- general:   anything else or unclear
+- technical: Python, Streamlit, SmartDocs, Claude API,
+             session state, error handling, deployment,
+             code, V1, V2, V3, versions of SmartDocs
+- research:  CRAG, RAG systems, benchmarks, papers,
+             academic, Self-RAG, retrieval methods
+- general:   anything else
 
-Reply ONLY with one word: technical, research, or general"""
+Reply ONLY: technical, research, or general"""
 
     response   = llm.invoke(
         [HumanMessage(content=classify_prompt)]
