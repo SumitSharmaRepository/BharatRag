@@ -137,3 +137,15 @@ Tuesday: agent loads facts from database
          "Welcome back Sumit. Last time we
           discussed LangGraph Day 9..."
          → persistent across days
+
+
+Feature          ChromaDB        Pinecone
+──────────────   ─────────────   ─────────────
+Storage          Local disk      Cloud
+Survives deploy  ❌ No           ✅ Yes
+Setup            3 lines         3 lines
+Version issues   Rare            Never
+Cost             Free            Free tier
+Scale            Single machine  Unlimited
+Job mentions     Sometimes       Always
+LangChain        ✅              ✅

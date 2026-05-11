@@ -1,0 +1,17 @@
+langchain
+langchain-anthropic
+langchain-community
+langchain-huggingface
+langchain-text-splitters
+langchain-core
+chromadb
+sentence-transformers
+pypdf
+python-dotenv
+anthropiclanggraph
+langsmith
+fastapi
+uvicorn
+python-multipart
+langchain-pinecone
+pinecone
