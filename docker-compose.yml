@@ -1,0 +1,63 @@
+# ============================================
+# BharatRAG Docker Compose
+# ============================================
+# docker-compose lets you run multiple
+# containers together with one command.
+#
+# Today: just the API
+# Future: API + Redis cache + monitoring
+# ============================================
+
+version: '3.8'
+
+services:
+
+  bharatrag-api:
+    # Build from Dockerfile in current directory
+    build: .
+
+    # Container name
+    container_name: bharatrag-api
+
+    # Map host port 8000 to container port 8000
+    # host:container
+    ports:
+      - "8000:8000"
+
+    # Environment variables
+    # These override the ENV defaults in Dockerfile
+    # Use your actual keys here
+    environment:
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+      - PINECONE_API_KEY=${PINECONE_API_KEY}
+      - PINECONE_INDEX=${PINECONE_INDEX}
+      - LANGSMITH_TRACING=${LANGSMITH_TRACING}
+      - LANGSMITH_API_KEY=${LANGSMITH_API_KEY}
+      - LANGSMITH_PROJECT=${LANGSMITH_PROJECT}
+    # ${VAR} reads from your .env file automatically
+    # docker-compose loads .env by default
+
+    # Restart policy
+    restart: unless-stopped
+    # unless-stopped = restart on crash
+    #                  but not if manually stopped
+
+    # Resource limits
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+          cpus: '1.0'
+    # Prevents container from using all your RAM
+    # sentence-transformers needs ~500MB
+
+    # Health check
+    healthcheck:
+      test: ["CMD", "curl", "-f",
+             "http://localhost:8000/health"]
+      interval: 30s
+      timeout:  10s
+      retries:  3
+      start_period: 40s
+    # start_period = wait 40s before first check
+    # Model loading takes time
