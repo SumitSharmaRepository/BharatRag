@@ -395,3 +395,93 @@ async def startup_event():
         print("ChromaDB empty — upload PDFs via /upload")
     print("API ready at http://localhost:8000")
     print("Docs at http://localhost:8000/docs")
+
+
+@app.post("/query-scanned")
+async def query_scanned_document(
+    file:     UploadFile = File(...),
+    question: str        = "What is this document about?",
+    language: str        = "Auto",
+):
+    """
+    POST /query-scanned
+    Upload a scanned PDF and ask a question.
+    Uses Claude Vision instead of text extraction.
+    """
+    if not file.filename.endswith(".pdf"):
+        raise HTTPException(400, "Only PDF files accepted")
+
+    with tempfile.NamedTemporaryFile(
+        delete=False, suffix=".pdf"
+    ) as tmp:
+        content = await file.read()
+        tmp.write(content)
+        tmp_path = tmp.name
+
+    try:
+        from pdf2image import convert_from_path
+        images = convert_from_path(
+            tmp_path, dpi=150,
+            first_page=1, last_page=3
+        )
+
+        all_text = []
+        for i, image in enumerate(images):
+            text = extract_text_from_image(
+                image, language
+            )
+            all_text.append(f"[Page {i+1}]\n{text}")
+
+        combined = "\n\n".join(all_text)
+
+        response = client.messages.create(
+            model      = "claude-sonnet-4-5",
+            max_tokens = 1024,
+            messages   = [{
+                "role":    "user",
+                "content": f"""Answer from document only.
+{combined}
+Question: {question}
+Answer:"""
+            }]
+        )
+
+        return {
+            "answer":   response.content[0].text,
+            "pages":    len(images),
+            "method":   "claude-vision",
+        }
+
+    finally:
+        os.unlink(tmp_path)
+
+@app.post("/upload", response_model=UploadResponse)
+async def upload_document(file: UploadFile = File(...)):
+
+    # ... save to tmp file ...
+
+    # OLD — only handles text PDFs
+    # loader = PyPDFLoader(tmp_path)
+    # pages  = loader.load()
+
+    # NEW — handles ALL PDFs including scanned
+    from day16_claude_vision import smart_extract
+    results = smart_extract(tmp_path)
+
+    # Convert to LangChain Documents
+    from langchain.schema import Document
+    pages = [
+        Document(
+            page_content = r["text"],
+            metadata     = {
+                "doc_name": file.filename,
+                "page":     r["page"] - 1,
+                "method":   r["method"],
+            }
+        )
+        for r in results
+    ]
+
+    # Rest stays same — chunk and store
+    chunks = splitter.split_documents(pages)
+    # ...        

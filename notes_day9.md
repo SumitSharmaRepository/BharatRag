@@ -149,3 +149,100 @@ Cost             Free            Free tier
 Scale            Single machine  Unlimited
 Job mentions     Sometimes       Always
 LangChain        ✅              ✅
+
+Day 14: Docker Containerization
+Day 15:Ragas
+Day 16: Multimodal AI  (Multimodal = text + images together)
+→ Send images to Claude
+→ Claude reads scanned PDFs visually
+→ Handles image-heavy documents
+→ Tables, diagrams, handwritten notes
+→ The biggest SmartDocs limitation solved
+example:
+
+# Text only (what you've done):
+messages=[{
+    "role": "user",
+    "content": "What is CRAG?"
+}]
+
+# Multimodal (Day 16):
+messages=[{
+    "role": "user",
+    "content": [
+        {
+            "type": "image",
+            "source": {
+                "type":       "base64",
+                "media_type": "image/jpeg",
+                "data":       base64_image_data,
+            }
+        },
+        {
+            "type": "text",
+            "text": "Extract all text from this document"
+        }
+    ]
+}]
+
+# Images can't be sent as raw bytes over JSON
+# Must be encoded as base64 string first
+import base64
+
+with open("page.png", "rb") as f:
+    image_bytes = f.read()
+    base64_str  = base64.standard_b64encode(
+        image_bytes
+    ).decode("utf-8")
+# PDF to image conversion
+pip install pdf2image pillow
+
+# System dependency for pdf2image
+sudo apt install poppler-utils -y 
+
+Day 16 pipeline:
+PDF → pdf2image → Claude Vision → text → answer
+WORKS for ALL PDFs including scanned
+
+Scanned government document:
+PyPDFLoader:   0-5 words  ← fails completely
+Claude Vision: 300+ words ← reads perfectly
+
+That's when Vision becomes essential.
+
+The Insight To Remember
+Text PDF (SmartDocs guide):
+→ PyPDFLoader = fine
+→ Claude Vision = fine
+→ Use PyPDFLoader (faster, cheaper)
+
+Scanned PDF (government doc, court record):
+→ PyPDFLoader = 0 words extracted ← fails
+→ Claude Vision = full text ← works perfectly
+→ Must use Vision
+
+Mixed PDF (text + scanned pages):
+→ Try PyPDFLoader first
+→ If page has < 50 words → switch to Vision
+→ Hybrid approach = best of both
+
+
+User uploads PDF
+      ↓
+api.py /upload endpoint
+      ↓
+smart_extract(pdf_path)
+      ↓
+For each page:
+  word_count >= 50? → PyPDFLoader ← fast, free
+  word_count < 50?  → Claude Vision ← accurate
+      ↓
+Returns list of {page, text, method}
+      ↓
+Convert to LangChain Documents
+      ↓
+chunk_documents() ← same as before
+      ↓
+Store in Pinecone ← same as before
+      ↓
+Ready for Q&A

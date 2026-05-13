@@ -51,16 +51,32 @@ def chunk_documents(documents: list) -> list:
     return chunks
 
 
+# src/loader.py
+
 def load_and_chunk_pdf(file_path: str) -> list:
     """
-    Convenience function: load PDF and chunk in one call.
-
-    Args:
-        file_path: path to PDF file
-
-    Returns:
-        list of Document chunks ready for embedding
+    Smart loader — detects text vs scanned per page.
+    Falls back to Vision for scanned pages.
     """
-    pages  = load_pdf(file_path)
-    chunks = chunk_documents(pages)
-    return chunks
+    from langchain.schema import Document
+
+    # Try smart extraction
+    results = smart_extract(file_path)
+
+    # Convert to LangChain Document objects
+    documents = []
+    for r in results:
+        doc = Document(
+            page_content = r["text"],
+            metadata     = {
+                "source":   file_path,
+                "page":     r["page"] - 1,
+                "doc_name": Path(file_path).name,
+                "method":   r["method"],
+                # Track which pages needed Vision
+            }
+        )
+        documents.append(doc)
+
+    # Now chunk them
+    return chunk_documents(documents)
