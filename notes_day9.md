@@ -246,3 +246,25 @@ chunk_documents() ← same as before
 Store in Pinecone ← same as before
       ↓
 Ready for Q&A
+
+
++++++++++++++++++++++++++++++
+
+Day 17: Mem0 
+Step 1 — After each conversation turn:
+Claude reads the message and extracts facts:
+"User is a CA firm owner"
+"User prefers Hindi"
+"User asked about GST 3 times"
+"User is based in Lucknow"
+
+Step 2 — Facts stored as vectors:
+Each fact → embedding → stored in vector DB
+(Mem0 manages this automatically)
+
+Step 3 — Before each response:
+Search stored facts relevant to current question
+Inject facts into Claude's context
+Claude answers with full user knowledge
+
+pip install mem0ai

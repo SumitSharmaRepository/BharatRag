@@ -15,3 +15,4 @@ uvicorn
 python-multipart
 langchain-pinecone
 pinecone
+mem0ai
