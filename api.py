@@ -1,21 +1,6 @@
-# ============================================
-# BharatRAG FastAPI Backend
-# ============================================
-# Exposes BharatRAG as a REST API.
-# Any frontend, mobile app, or service
-# can now call BharatRAG via HTTP.
-#
-# Java equivalent:
-# This is your Spring Boot @RestController
-# uvicorn = embedded Tomcat
-# Pydantic = javax.validation
-# ============================================
-
 import os
-import shutil
 import tempfile
 from dotenv import load_dotenv
-
 load_dotenv()
 
 from fastapi import FastAPI, UploadFile, File, HTTPException
@@ -24,321 +9,225 @@ from pydantic import BaseModel
 from typing import Optional
 
 from langchain_anthropic import ChatAnthropic
-
-# from langchain_chroma import Chroma#removing since using pgvector now
 from langchain_pinecone import PineconeVectorStore
-from pinecone import Pinecone
 from langchain_huggingface import HuggingFaceEmbeddings
 from langchain_community.document_loaders import PyPDFLoader
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_core.messages import HumanMessage
+from pinecone import Pinecone as PineconeClient
 
-# ── App setup ─────────────────────────────────────────
+EMBEDDING_MODEL  = "sentence-transformers/all-MiniLM-L6-v2"
+ANTHROPIC_KEY    = os.getenv("ANTHROPIC_API_KEY")
+PINECONE_API_KEY = os.getenv("PINECONE_API_KEY")
+PINECONE_INDEX   = os.getenv("PINECONE_INDEX", "bharatrag")
+
 app = FastAPI(
-    title="BharatRAG API",
-    description="AI-powered document Q&A for Indian professionals",
-    version="1.0.0",
+    title       = "BharatRAG API",
+    description = "AI-powered document Q&A for Indian professionals",
+    version     = "1.0.0",
 )
-# FastAPI() creates the application
-# title and description appear in auto-generated docs
-# Like @SpringBootApplication in Java
 
-# ── CORS middleware ────────────────────────────────────
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # allow all origins
-    allow_methods=["*"],  # allow all HTTP methods
-    allow_headers=["*"],  # allow all headers
+    allow_origins = ["*"],
+    allow_methods = ["*"],
+    allow_headers = ["*"],
 )
-# CORS = Cross-Origin Resource Sharing
-# Allows your Streamlit frontend to call this API
-# Without this: browser blocks cross-origin requests
-# Java equivalent: @CrossOrigin annotation
 
-# ── Config ─────────────────────────────────────────────
-CHROMA_PATH = "./chroma_db"
-DATA_PATH = "./data"
-EMBEDDING_MODEL = "sentence-transformers/all-MiniLM-L6-v2"
-ANTHROPIC_KEY = os.getenv("ANTHROPIC_API_KEY")
-pc = Pinecone(api_key=os.getenv("PINECONE_API_KEY"))
-
-# ── Global objects (loaded once at startup) ────────────
 embeddings = HuggingFaceEmbeddings(model_name=EMBEDDING_MODEL)
 
 llm = ChatAnthropic(
-    model="claude-sonnet-4-5",
-    temperature=0,
-    anthropic_api_key=ANTHROPIC_KEY,
+    model             = "claude-sonnet-4-5",
+    temperature       = 0,
+    anthropic_api_key = ANTHROPIC_KEY,
 )
 
-
-# Removing chroma since we are using pgvector now
-# def get_vectorstore():
-#    """Load existing ChromaDB."""
-#    return Chroma(
-#        embedding_function = embeddings,
-#        persist_directory  = CHROMA_PATH,
-#    )
 def get_vectorstore():
     return PineconeVectorStore(
-        index_name = os.getenv("PINECONE_INDEX", "bharatrag"),
+        index_name = PINECONE_INDEX,
         embedding  = embeddings,
     )
 
-
-def get_retriever(filter_dict=None):
-    """Get retriever with optional document filter."""
-    vectorstore = get_vectorstore()
+def get_retriever(filter_dict: dict = None):
     kwargs = {"k": 3}
     if filter_dict:
         kwargs["filter"] = filter_dict
-    return vectorstore.as_retriever(search_kwargs=kwargs)
+    return get_vectorstore().as_retriever(
+        search_kwargs=kwargs
+    )
 
+def get_pinecone_chunk_count() -> int:
+    try:
+        pc    = PineconeClient(api_key=PINECONE_API_KEY)
+        index = pc.Index(PINECONE_INDEX)
+        stats = index.describe_index_stats()
+        return stats.get("total_vector_count", 0)
+    except Exception:
+        return 0
 
-# ============================================
-# PYDANTIC MODELS — Request/Response schemas
-# ============================================
-# Pydantic validates incoming data automatically
-# Wrong type = 422 Unprocessable Entity response
-# Missing required field = 422 automatically
-#
-# Java equivalent:
-# @RequestBody with @Valid and Bean Validation
-# ============================================
+def get_pinecone_documents() -> list:
+    try:
+        pc    = PineconeClient(api_key=PINECONE_API_KEY)
+        index = pc.Index(PINECONE_INDEX)
+        dummy  = [0.0] * 384
+        result = index.query(
+            vector           = dummy,
+            top_k            = 100,
+            include_metadata = True,
+        )
+        doc_names = set()
+        for match in result.get("matches", []):
+            meta = match.get("metadata", {})
+            if "doc_name" in meta:
+                doc_names.add(meta["doc_name"])
+        return sorted(list(doc_names))
+    except Exception:
+        return []
 
 
 class QueryRequest(BaseModel):
-    question: str
-    language: str = "English"
-    # Optional: filter to specific document
+    question:   str
+    language:   str           = "English"
     doc_filter: Optional[str] = None
-
-    class Config:
-        json_schema_extra = {
-            "example": {
-                "question": "What is session state?",
-                "language": "English",
-                "doc_filter": None,
-            }
-        }
-
+    user_id:    str           = "default_user"
 
 class QueryResponse(BaseModel):
-    answer: str
-    sources: list[str]
-    language: str
-    doc_count: int
-
+    answer:     str
+    sources:    list[str]
+    language:   str
+    doc_count:  int
+    agent_used: str = "RAGPipeline"
 
 class UploadResponse(BaseModel):
-    filename: str
-    pages: int
-    chunks: int
+    filename:     str
+    pages:        int
+    chunks:       int
     total_chunks: int
-    message: str
-
+    message:      str
 
 class HealthResponse(BaseModel):
-    status: str
-    chunks: int
-    model: str
+    status:  str
+    chunks:  int
+    model:   str
     version: str
 
-
 class DocumentsResponse(BaseModel):
-    documents: list[str]
+    documents:    list[str]
     total_chunks: int
-
-
-# ============================================
-# ROUTES / ENDPOINTS
-# ============================================
-# Each function is an API endpoint.
-# Decorator tells FastAPI the HTTP method and path.
-#
-# @app.get("/path")  → GET request
-# @app.post("/path") → POST request
-#
-# Java equivalent:
-# @GetMapping("/path")
-# @PostMapping("/path")
-# ============================================
 
 
 @app.get("/health", response_model=HealthResponse)
 def health_check():
-    """
-    GET /health
-    Returns API status and basic stats.
-    Use this to verify the API is running.
-    """
-    try:
-        vs = get_vectorstore()
-        chunks = vs._collection.count()
-    except Exception:
-        chunks = 0
-
+    chunks = get_pinecone_chunk_count()
     return HealthResponse(
-        status="healthy",
-        chunks=chunks,
-        model="claude-sonnet-4-5",
-        version="1.0.0",
+        status  = "healthy",
+        chunks  = chunks,
+        model   = "claude-sonnet-4-5",
+        version = "1.0.0",
     )
 
 
 @app.get("/documents", response_model=DocumentsResponse)
 def list_documents():
-    """
-    GET /documents
-    Lists all indexed documents in ChromaDB.
-    Shows which PDFs have been uploaded.
-    """
     try:
-        vs = get_vectorstore()
-        results = vs._collection.get(include=["metadatas"])
-        # Extract unique document names
-        doc_names = set()
-        for meta in results["metadatas"]:
-            if meta and "doc_name" in meta:
-                doc_names.add(meta["doc_name"])
-
+        docs   = get_pinecone_documents()
+        chunks = get_pinecone_chunk_count()
         return DocumentsResponse(
-            documents=sorted(list(doc_names)),
-            total_chunks=vs._collection.count(),
+            documents    = docs,
+            total_chunks = chunks,
         )
     except Exception as e:
-        raise HTTPException(
-            status_code=500, detail=f"Error listing documents: {str(e)}"
-        )
+        raise HTTPException(500, f"Error: {str(e)}")
 
 
 @app.post("/upload", response_model=UploadResponse)
 async def upload_document(file: UploadFile = File(...)):
-    """
-    POST /upload
-    Upload a PDF file and index it to ChromaDB.
-
-    Accepts: multipart/form-data with PDF file
-    Returns: upload stats
-
-    This replaces the manual copy-to-data-folder approach.
-    Any client can upload PDFs via HTTP now.
-    """
-    # Validate file type
     if not file.filename.endswith(".pdf"):
-        raise HTTPException(status_code=400, detail="Only PDF files accepted")
+        raise HTTPException(400, "Only PDF files accepted")
 
-    # Save uploaded file to temp location
-    # tempfile ensures cleanup after processing
-    with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp:
-        content = await file.read()
-        # await = async file read
-        # while file is being read, FastAPI handles other requests
-        tmp.write(content)
+    with tempfile.NamedTemporaryFile(
+        delete=False, suffix=".pdf"
+    ) as tmp:
+        tmp.write(await file.read())
         tmp_path = tmp.name
 
     try:
-        # Load and chunk the PDF
         loader = PyPDFLoader(tmp_path)
-        pages = loader.load()
+        pages  = loader.load()
 
-        # Add filename to metadata
         for page in pages:
             page.metadata["doc_name"] = file.filename
 
-        # Chunk it
         splitter = RecursiveCharacterTextSplitter(
-            chunk_size=500,
-            chunk_overlap=100,
+            chunk_size=500, chunk_overlap=100
         )
         chunks = splitter.split_documents(pages)
 
-        # Add to existing ChromaDB
-        # (doesn't delete existing documents)
-        # Same! PineconeVectorStore has same interface 
         vs = get_vectorstore()
         vs.add_documents(chunks)
 
-        
-
-        total = vs._collection.count()
+        total = get_pinecone_chunk_count()
 
         return UploadResponse(
-            filename=file.filename,
-            pages=len(pages),
-            chunks=len(chunks),
-            total_chunks=total,
-            message=f"Successfully indexed {file.filename}",
+            filename     = file.filename,
+            pages        = len(pages),
+            chunks       = len(chunks),
+            total_chunks = total,
+            message      = f"Indexed {file.filename}",
         )
-
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error processing PDF: {str(e)}")
+        raise HTTPException(500, f"Error: {str(e)}")
     finally:
-        # Always clean up temp file
         os.unlink(tmp_path)
 
 
 @app.post("/query", response_model=QueryResponse)
 async def query_documents(request: QueryRequest):
-    """
-    POST /query
-    Ask a question about uploaded documents.
-
-    This is the main endpoint.
-    Retrieves relevant chunks and generates answer.
-
-    Supports:
-    - English, Hindi, Hinglish responses
-    - Filter to specific document
-    """
     if not request.question.strip():
-        raise HTTPException(status_code=400, detail="Question cannot be empty")
+        raise HTTPException(400, "Question cannot be empty")
 
-    # Build filter if specific document requested
     filter_dict = None
     if request.doc_filter:
         filter_dict = {"doc_name": request.doc_filter}
 
-    # Retrieve relevant chunks
     retriever = get_retriever(filter_dict)
-    docs = retriever.invoke(request.question)
+    docs      = retriever.invoke(request.question)
 
     if not docs:
         return QueryResponse(
-            answer="I could not find relevant " "information in the documents.",
-            sources=[],
-            language=request.language,
-            doc_count=0,
+            answer     = "I could not find relevant information.",
+            sources    = [],
+            language   = request.language,
+            doc_count  = 0,
+            agent_used = "RAGPipeline",
         )
 
-    # Format chunks with citations
     doc_texts = []
-    sources = []
+    sources   = []
 
     for doc in docs:
-        page = doc.metadata.get("page", "?")
+        page     = doc.metadata.get("page", "?")
         doc_name = doc.metadata.get("doc_name", "unknown")
-        source = f"{doc_name}, Page {int(page)+1}"
+        source   = f"{doc_name}, Page {int(page)+1}"
         sources.append(source)
         doc_texts.append(f"[{source}]\n{doc.page_content}")
 
     context = "\n\n".join(doc_texts)
 
-    # Language instructions
     lang_instruction = {
-        "English": "Answer in clear English.",
+        "English":       "Answer in clear English.",
         "Hindi / हिंदी": "हिंदी में जवाब दें।",
-        "Hinglish": "Answer in Hinglish — natural " "mix of Hindi and English.",
+        "Hinglish":      "Answer in Hinglish naturally.",
+        "Arabic / عربي": "أجب باللغة العربية بوضوح.",
     }.get(request.language, "Answer in clear English.")
 
-    # Generate answer
     prompt = f"""You are BharatRAG — an AI document assistant
 for Indian professionals.
 
 {lang_instruction}
 
 Answer using ONLY the provided context.
-If not found say: "I could not find this in the documents."
+If not found: "I could not find this in the documents."
 Always cite which document your answer comes from.
 
 Context:
@@ -351,137 +240,31 @@ Answer:"""
     response = llm.invoke([HumanMessage(content=prompt)])
 
     return QueryResponse(
-        answer=response.content,
-        sources=list(set(sources)),
-        language=request.language,
-        doc_count=len(docs),
+        answer     = response.content,
+        sources    = list(set(sources)),
+        language   = request.language,
+        doc_count  = len(docs),
+        agent_used = "RAGPipeline",
     )
 
 
 @app.delete("/reset")
 def reset_database():
-    """
-    DELETE /reset
-    Clear all indexed documents from ChromaDB.
-    Use with caution — cannot be undone.
-    """
     try:
-        if os.path.exists(CHROMA_PATH):
-            shutil.rmtree(CHROMA_PATH)
-            return {"message": "ChromaDB cleared successfully", "status": "reset"}
-        return {"message": "ChromaDB was already empty", "status": "ok"}
+        pc    = PineconeClient(api_key=PINECONE_API_KEY)
+        index = pc.Index(PINECONE_INDEX)
+        index.delete(delete_all=True)
+        return {"message": "Pinecone cleared", "status": "reset"}
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error resetting: {str(e)}")
-
-
-# ============================================
-# STARTUP EVENT
-# ============================================
-# Runs once when API starts.
-# Good place to load models, check connections.
-# Java equivalent: @PostConstruct
-# ============================================
+        raise HTTPException(500, f"Error: {str(e)}")
 
 
 @app.on_event("startup")
 async def startup_event():
     print("BharatRAG API starting...")
-    print(f"Model: claude-sonnet-4-5")
-    print(f"ChromaDB: {CHROMA_PATH}")
-    try:
-        vs = get_vectorstore()
-        print(f"Chunks loaded: {vs._collection.count()}")
-    except Exception:
-        print("ChromaDB empty — upload PDFs via /upload")
+    print(f"Model:     claude-sonnet-4-5")
+    print(f"Vector DB: Pinecone ({PINECONE_INDEX})")
+    chunks = get_pinecone_chunk_count()
+    print(f"Chunks:    {chunks}")
     print("API ready at http://localhost:8000")
     print("Docs at http://localhost:8000/docs")
-
-
-@app.post("/query-scanned")
-async def query_scanned_document(
-    file:     UploadFile = File(...),
-    question: str        = "What is this document about?",
-    language: str        = "Auto",
-):
-    """
-    POST /query-scanned
-    Upload a scanned PDF and ask a question.
-    Uses Claude Vision instead of text extraction.
-    """
-    if not file.filename.endswith(".pdf"):
-        raise HTTPException(400, "Only PDF files accepted")
-
-    with tempfile.NamedTemporaryFile(
-        delete=False, suffix=".pdf"
-    ) as tmp:
-        content = await file.read()
-        tmp.write(content)
-        tmp_path = tmp.name
-
-    try:
-        from pdf2image import convert_from_path
-        images = convert_from_path(
-            tmp_path, dpi=150,
-            first_page=1, last_page=3
-        )
-
-        all_text = []
-        for i, image in enumerate(images):
-            text = extract_text_from_image(
-                image, language
-            )
-            all_text.append(f"[Page {i+1}]\n{text}")
-
-        combined = "\n\n".join(all_text)
-
-        response = client.messages.create(
-            model      = "claude-sonnet-4-5",
-            max_tokens = 1024,
-            messages   = [{
-                "role":    "user",
-                "content": f"""Answer from document only.
-{combined}
-Question: {question}
-Answer:"""
-            }]
-        )
-
-        return {
-            "answer":   response.content[0].text,
-            "pages":    len(images),
-            "method":   "claude-vision",
-        }
-
-    finally:
-        os.unlink(tmp_path)
-
-@app.post("/upload", response_model=UploadResponse)
-async def upload_document(file: UploadFile = File(...)):
-
-    # ... save to tmp file ...
-
-    # OLD — only handles text PDFs
-    # loader = PyPDFLoader(tmp_path)
-    # pages  = loader.load()
-
-    # NEW — handles ALL PDFs including scanned
-    from day16_claude_vision import smart_extract
-    results = smart_extract(tmp_path)
-
-    # Convert to LangChain Documents
-    from langchain.schema import Document
-    pages = [
-        Document(
-            page_content = r["text"],
-            metadata     = {
-                "doc_name": file.filename,
-                "page":     r["page"] - 1,
-                "method":   r["method"],
-            }
-        )
-        for r in results
-    ]
-
-    # Rest stays same — chunk and store
-    chunks = splitter.split_documents(pages)
-    # ...        
