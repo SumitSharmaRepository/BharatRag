@@ -11,6 +11,7 @@ export default defineConfig({
       '/upload':    'http://localhost:8000',
       '/query':     'http://localhost:8000',
       '/reset':     'http://localhost:8000',
+      '/stream':    'http://localhost:8000',
     }
   }
 })

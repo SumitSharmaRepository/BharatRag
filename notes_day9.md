@@ -268,3 +268,33 @@ Inject facts into Claude's context
 Claude answers with full user knowledge
 
 pip install mem0ai
+
+#Streaming Responses
+#full streamlit UI
+Without streaming:
+    Client → POST /query → waits 4s → full response
+
+With streaming (SSE):
+    Client → GET /stream → connection stays open
+    Server → sends chunks as Claude generates them
+            "CRAG" → " is" → " a" → " plug" → ...
+    Client → displays each chunk immediately
+
+SSE = Server-Sent Events
+    Not WebSockets (bidirectional)
+    SSE is one-way: server → client only
+    Perfect for streaming LLM responses
+    Built into every browser natively
+    No extra library needed on frontend
+
+Part 1 — FastAPI: Backend endpoints
+    New endpoint: GET /stream
+    Uses Claude's stream=True
+    Yields chunks as SSE events
+
+Part 2 — React:(front end )
+    New hook: useStream
+    Uses browser's EventSource API
+    Updates message word by word    
+
+   *** startTransition tells React to process these as non-urgent updates — shows each chunk as it arrives rather than batching them.

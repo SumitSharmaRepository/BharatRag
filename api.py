@@ -16,6 +16,11 @@ from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_core.messages import HumanMessage
 from pinecone import Pinecone as PineconeClient
 
+#streaming imports
+from fastapi.responses import StreamingResponse
+import anthropic
+import json
+
 EMBEDDING_MODEL  = "sentence-transformers/all-MiniLM-L6-v2"
 ANTHROPIC_KEY    = os.getenv("ANTHROPIC_API_KEY")
 PINECONE_API_KEY = os.getenv("PINECONE_API_KEY")
@@ -245,6 +250,165 @@ Answer:"""
         language   = request.language,
         doc_count  = len(docs),
         agent_used = "RAGPipeline",
+    )
+
+
+@app.get("/stream")
+async def stream_query(
+    question:   str = "",
+    language:   str = "English",
+    user_id:    str = "default_user",
+    doc_filter: str = "",
+):
+    """
+    GET /stream
+    Streams Claude's response word by word.
+    Uses Server-Sent Events (SSE).
+
+    Client connects and keeps connection open.
+    Server sends chunks as Claude generates them.
+    Client displays each chunk immediately.
+
+    Why GET not POST:
+    EventSource API (browser built-in) only
+    supports GET requests. So we pass params
+    in query string instead of request body.
+    """
+    if not question.strip():
+        async def error_stream():
+            yield "data: {\"error\": \"Question required\"}\n\n"
+        return StreamingResponse(
+            error_stream(),
+            media_type="text/event-stream"
+        )
+
+    async def generate():
+        """
+        Generator function that yields SSE events.
+        Each yield sends one chunk to the browser.
+
+        SSE format:
+        data: {"chunk": "hello"}\n\n
+        data: {"chunk": " world"}\n\n
+        data: [DONE]\n\n
+        """
+        try:
+            # Send ping immediately so browser
+            # doesn't timeout before retrieval
+            yield ": ping\n\n"
+            
+            # Step 1 — Retrieve relevant chunks
+            filter_dict = None
+            if doc_filter:
+                filter_dict = {"doc_name": doc_filter}
+
+            retriever = get_retriever(filter_dict)
+            docs      = retriever.invoke(question)
+
+            if not docs:
+                yield (
+                    "data: " +
+                    json.dumps({
+                        "chunk": "I could not find "
+                                 "relevant information."
+                    }) + "\n\n"
+                )
+                yield "data: [DONE]\n\n"
+                return
+
+            # Format context
+            doc_texts = []
+            sources   = []
+            for doc in docs:
+                page     = doc.metadata.get("page", "?")
+                doc_name = doc.metadata.get(
+                    "doc_name", "unknown"
+                )
+                source   = f"{doc_name}, Page {int(page)+1}"
+                sources.append(source)
+                doc_texts.append(
+                    f"[{source}]\n{doc.page_content}"
+                )
+
+            context = "\n\n".join(doc_texts)
+
+            lang_instruction = {
+                "English":       "Answer in clear English.",
+                "Hindi / हिंदी": "हिंदी में जवाब दें।",
+                "Hinglish":      "Answer in Hinglish naturally.",
+                "Arabic / عربي": "أجب باللغة العربية بوضوح.",
+            }.get(language, "Answer in clear English.")
+
+            prompt = f"""You are BharatRAG — an AI document
+assistant for Indian professionals.
+
+{lang_instruction}
+
+Answer using ONLY the provided context.
+If not found say:
+"I could not find this in the documents."
+Always cite which document your answer comes from.
+
+Context:
+{context}
+
+Question: {question}
+
+Answer:"""
+
+            # Step 2 — Stream Claude response
+            # Use Anthropic client directly for streaming
+            anthropic_client = anthropic.Anthropic(
+                api_key=ANTHROPIC_KEY
+            )
+
+            with anthropic_client.messages.stream(
+                model      = "claude-sonnet-4-5",
+                max_tokens = 1024,
+                messages   = [
+                    {"role": "user", "content": prompt}
+                ],
+            ) as stream:
+                for text_chunk in stream.text_stream:
+                    # Send each chunk as SSE event
+                    yield (
+                        "data: " +
+                        json.dumps({"chunk": text_chunk}) +
+                        "\n\n"
+                    )
+            # Force browser flush with comment padding
+            # Browser buffers until ~1KB received
+            # This comment pushes past that threshold
+            yield ": padding\n\n"
+            # Send sources after answer completes
+            # yield (
+            #     "data: " +
+            #     json.dumps({
+            #         "sources":    list(set(sources)),
+            #         "agent_used": "RAGPipeline",
+            #         "done":       True,
+            #     }) + "\n\n"
+            # )
+
+            # Signal stream complete
+            yield "data: [DONE]\n\n"
+
+        except Exception as e:
+            yield (
+                "data: " +
+                json.dumps({"error": str(e)}) +
+                "\n\n"
+            )
+            yield "data: [DONE]\n\n"
+
+    return StreamingResponse(
+        generate(),
+        media_type = "text/event-stream",
+        headers    = {
+            "Cache-Control":               "no-cache",
+            "X-Accel-Buffering":           "no",
+            "Access-Control-Allow-Origin": "*",
+        }
     )
 
 

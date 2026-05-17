@@ -25,24 +25,29 @@ export default function Message({ msg }) {
         flex items-center justify-center
         shrink-0 mt-0.5
       ">
-        <span className="text-brand text-xs font-bold">B</span>
+        <span className="
+          text-brand text-xs font-bold
+        ">B</span>
       </div>
 
       <div className="flex-1">
         {msg.loading ? (
+          /* Typing dots — shown before first chunk */
           <div className="
             bg-slate-100 dark:bg-slate-800
             rounded-2xl rounded-tl-sm
             px-4 py-3 inline-flex gap-1
           ">
-            {[0,1,2].map(i => (
+            {[0, 1, 2].map(i => (
               <span
                 key={i}
                 className="
                   w-1.5 h-1.5 bg-slate-400
                   rounded-full animate-bounce
                 "
-                style={{ animationDelay: `${i * 0.15}s` }}
+                style={{
+                  animationDelay: `${i * 0.15}s`
+                }}
               />
             ))}
           </div>
@@ -66,9 +71,20 @@ export default function Message({ msg }) {
               <ReactMarkdown>
                 {msg.content}
               </ReactMarkdown>
+
+              {/* Blinking cursor while streaming */}
+              {msg.streaming && (
+                <span className="
+                  inline-block w-0.5 h-4
+                  bg-brand ml-0.5
+                  animate-pulse align-middle
+                "/>
+              )}
             </div>
 
-            {(msg.agent || msg.sources?.length > 0) && (
+            {/* Agent badge + sources */}
+            {(msg.agent ||
+              msg.sources?.length > 0) && (
               <div className="
                 flex items-center gap-2
                 mt-1.5 flex-wrap
@@ -76,14 +92,18 @@ export default function Message({ msg }) {
                 {msg.agent && (
                   <AgentBadge agent={msg.agent} />
                 )}
-                {msg.sources?.slice(0, 3).map((s, i) => (
-                  <span
-                    key={i}
-                    className="text-xs text-slate-400"
-                  >
-                    {s}
-                  </span>
-                ))}
+                {msg.sources?.slice(0, 3).map(
+                  (s, i) => (
+                    <span
+                      key={i}
+                      className="
+                        text-xs text-slate-400
+                      "
+                    >
+                      {s}
+                    </span>
+                  )
+                )}
               </div>
             )}
           </>
