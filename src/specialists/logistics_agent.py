@@ -99,7 +99,11 @@ def logistics_agent_node(
     # Retrieve logistics chunks
     try:
         retriever = get_logistics_retriever()
-        docs      = retriever.invoke(question)
+        docs = hybrid_search(
+            query  = question,
+            k      = 4,
+            alpha  = 0.3,  # more keyword for invoices
+        )
     except Exception:
         # Fallback: search without filter
         # if no logistics docs indexed yet
@@ -111,7 +115,11 @@ def logistics_agent_node(
         retriever = vectorstore.as_retriever(
             search_kwargs={"k": 4}
         )
-        docs = retriever.invoke(question)
+        docs = hybrid_search(
+            query  = question,
+            k      = 4,
+            alpha  = 0.3,  # more keyword for invoices
+        )
 
     if not docs:
         return {

@@ -19,3 +19,4 @@ sentence-transformers
 chromadb
 ragas
 datasetsragas
+pinecone-text

@@ -11,6 +11,9 @@ from langchain_huggingface import HuggingFaceEmbeddings
 from langchain_pinecone import PineconeVectorStore
 from pinecone import Pinecone
 
+from src.retrieval.hybrid import hybrid_search, smart_alpha
+from langchain_core.documents import Document
+
 ANTHROPIC_KEY    = os.getenv("ANTHROPIC_API_KEY")
 PINECONE_API_KEY = os.getenv("PINECONE_API_KEY")
 PINECONE_INDEX   = os.getenv("PINECONE_INDEX", "bharatrag")
@@ -66,7 +69,27 @@ def get_retriever(doc_name_filter: str = None,
     return vectorstore.as_retriever(
         search_kwargs={"k": k}
     )
+def get_hybrid_retriever(
+    query:       str,
+    k:           int  = 3,
+    filter_dict: dict = None,
+) -> list[Document]:
+    """
+    Hybrid retriever — automatically picks alpha.
+    Drop-in replacement for get_retriever().
 
+    Usage in any specialist:
+    docs = get_hybrid_retriever(question, k=3)
+    instead of:
+    docs = get_retriever().invoke(question)
+    """
+    alpha = smart_alpha(query)
+    return hybrid_search(
+        query       = query,
+        k           = k,
+        alpha       = alpha,
+        filter_dict = filter_dict,
+    )
 
 def format_docs_with_citations(docs: list) -> tuple:
     """
