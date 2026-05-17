@@ -1,8 +1,13 @@
+# Core
 anthropic
+python-dotenv
+python-multipart
+
+# FastAPI
 fastapi
 uvicorn
-python-multipart
-python-dotenv
+
+# LangChain ecosystem
 langchain
 langchain-anthropic
 langchain-community
@@ -11,12 +16,30 @@ langchain-huggingface
 langchain-text-splitters
 langchain-pinecone
 langchain-chroma
+
+# LangGraph + LangSmith
 langgraph
 langsmith
+
+# Vector databases
 pinecone
-pypdf
-sentence-transformers
-chromadb
-ragas
-datasetsragas
 pinecone-text
+chromadb
+
+# Embeddings
+sentence-transformers
+
+# PDF processing
+pypdf
+pdf2image
+pillow
+
+# Evaluation
+ragas
+datasets
+
+# Memory
+mem0ai
+
+# WhatsApp
+twilio

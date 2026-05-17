@@ -298,3 +298,55 @@ Part 2 — React:(front end )
     Updates message word by word    
 
    *** startTransition tells React to process these as non-urgent updates — shows each chunk as it arrives rather than batching them.
+
+#Twilio and nggrok
+
+User sends "hello"
+      ↓
+Twilio POSTs to /whatsapp
+      ↓
+whatsapp_webhook() runs
+      ↓
+message.lower() == "hello" → True
+      ↓
+msg.body(HELP_MESSAGE)
+      ↓
+Returns TwiML XML to Twilio
+      ↓
+Twilio sends HELP_MESSAGE to user's WhatsApp
+
+
+Example: 
+You sent:     "What is CRAG?"
+BharatRAG:
+  → Twilio received message
+  → Called your ngrok URL
+  → FastAPI ran RAG pipeline
+  → Retrieved CRAG.pdf chunks
+  → Claude generated answer
+  → Twilio sent reply to your WhatsApp
+
+#about ng grok
+nggrok- http 8001 <- terminal 2>
+
+Your FastAPI runs on:
+localhost:8001
+← only accessible inside your laptop
+← Twilio (on internet) cannot reach it
+
+ngrok creates a tunnel:
+https://abc123.ngrok-free.app
+← public URL on the internet
+← forwards all traffic to your localhost:8001
+← Twilio can now call your laptop
+
+Think of it like:
+ngrok = temporary public address for your laptop
+
+***ngrok URL changes every restart (free plan).
+For production:
+→ Deploy whatsapp.py to Railway
+→ Fixed URL — no ngrok needed
+→ This happens Day 29
+
+For now ngrok is fine for testing and demos.

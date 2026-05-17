@@ -93,3 +93,15 @@ Deploy to cloud → world can use it
 ✅ Error handling with HTTPException
 ✅ Startup event
 ✅ WSL → Windows network routing
+
+
+DAY 22
+✅ WhatsApp webhook endpoint
+✅ Twilio integration
+✅ ngrok tunnel for local testing
+✅ Language detection (auto + commands)
+✅ Session memory per phone number
+✅ Help message with commands
+✅ Source citations in reply
+✅ Full BharatRAG pipeline on WhatsApp
+✅ Hindi, Hinglish, Arabic, English
