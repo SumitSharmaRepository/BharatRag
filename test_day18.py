@@ -67,3 +67,13 @@ if __name__ == "__main__":
         user_id="logistics_user")
     # Second question should route to LogisticsAgent
     # because Mem0 remembered "logistics company owner"
+
+    # Test comparison routing
+run("Compare V1 and V2 of SmartDocs", agent)
+
+# Test summary routing
+run("Summarise the CRAG paper", agent)
+
+# Test summary in Hindi
+run("SmartDocs guide ka summary do", agent,
+    language="Hinglish")

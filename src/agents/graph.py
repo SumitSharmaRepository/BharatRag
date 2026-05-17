@@ -26,6 +26,8 @@ from src.specialists.tech_agent      import tech_agent_node
 from src.specialists.research_agent  import research_agent_node
 from src.specialists.logistics_agent import logistics_agent_node
 from src.specialists.general_agent   import general_agent_node
+from src.specialists.comparison_agent import comparison_agent_node
+from src.specialists.summary_agent    import summary_agent_node
 from src.memory.persistent           import save_memories
 
 
@@ -63,46 +65,52 @@ def build_multi_agent(with_memory: bool = True):
     # ── Register nodes ────────────────────────────────
     if with_memory:
         workflow.add_node("memory_retrieve",  memory_retrieve_node)
-    workflow.add_node("supervisor",       supervisor_node)
-    workflow.add_node("tech_agent",       tech_agent_node)
-    workflow.add_node("research_agent",   research_agent_node)
-    workflow.add_node("logistics_agent",  logistics_agent_node)
-    workflow.add_node("general_agent",    general_agent_node)
-    if with_memory:
-        workflow.add_node("memory_save",  memory_save_node)
 
-    # ── Fixed edges ───────────────────────────────────
+    workflow.add_node("supervisor",        supervisor_node)
+    workflow.add_node("extraction_agent",  logistics_agent_node)
+    # ExtractionAgent reuses LogisticsAgent for now
+    # rename later when you have a dedicated extractor
+    workflow.add_node("explanation_agent", tech_agent_node)
+    # ExplanationAgent reuses TechAgent for now
+    workflow.add_node("comparison_agent",  comparison_agent_node)
+    workflow.add_node("summary_agent",     summary_agent_node)
+    workflow.add_node("logistics_agent",   logistics_agent_node)
+    workflow.add_node("general_agent",     general_agent_node)
+
+    if with_memory:
+        workflow.add_node("memory_save", memory_save_node)
+
     if with_memory:
         workflow.set_entry_point("memory_retrieve")
         workflow.add_edge("memory_retrieve", "supervisor")
     else:
         workflow.set_entry_point("supervisor")
 
-    # ── Conditional routing from supervisor ───────────
     workflow.add_conditional_edges(
         "supervisor",
         supervisor_router,
         {
-            "tech_agent":      "tech_agent",
-            "research_agent":  "research_agent",
-            "logistics_agent": "logistics_agent",
-            "general_agent":   "general_agent",
+            "extraction_agent":  "extraction_agent",
+            "explanation_agent": "explanation_agent",
+            "comparison_agent":  "comparison_agent",
+            "summary_agent":     "summary_agent",
+            "logistics_agent":   "logistics_agent",
+            "general_agent":     "general_agent",
         }
     )
 
-    # ── All specialists → memory_save → END ──────────
+    all_specialists = [
+        "extraction_agent", "explanation_agent",
+        "comparison_agent", "summary_agent",
+        "logistics_agent",  "general_agent",
+    ]
+
     if with_memory:
-        for specialist in [
-            "tech_agent", "research_agent",
-            "logistics_agent", "general_agent"
-        ]:
-            workflow.add_edge(specialist, "memory_save")
+        for s in all_specialists:
+            workflow.add_edge(s, "memory_save")
         workflow.add_edge("memory_save", END)
     else:
-        for specialist in [
-            "tech_agent", "research_agent",
-            "logistics_agent", "general_agent"
-        ]:
-            workflow.add_edge(specialist, END)
+        for s in all_specialists:
+            workflow.add_edge(s, END)
 
     return workflow.compile()

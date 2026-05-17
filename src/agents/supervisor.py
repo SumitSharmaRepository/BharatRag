@@ -68,17 +68,25 @@ def supervisor_node(state: MultiAgentState) -> dict:
 Question: "{question}"
 
 Categories:
-- technical:  Python, Streamlit, AI tools, SmartDocs,
-              code, APIs, V1/V2/V3 versions, deployment
-- research:   CRAG, RAG systems, research papers,
-              benchmarks, academic concepts, Self-RAG
-- logistics:  invoices, delivery challans, purchase orders,
-              e-way bills, freight, vendors, amounts,
-              GST on invoices, shipping, warehouse
-- general:    anything else or unclear
+- extraction:  asks for specific values — amounts,
+               dates, invoice numbers, totals, names,
+               codes, percentages, rates
+- explanation: asks how something works, what something
+               means, concepts, theory, definitions
+- comparison:  asks to compare, contrast, or find
+               differences between two or more things
+               (keywords: vs, versus, compare, differ,
+               difference between)
+- summary:     asks to summarise, give key points,
+               overview, or main topics of a document
+               (keywords: summarise, summary, key points,
+               overview, main topics, highlights)
+- logistics:   invoices, delivery challans, purchase
+               orders, e-way bills, freight, vendors
+- general:     anything else or unclear
 
-Reply ONLY with one word: technical, research, \
-logistics, or general"""
+Reply ONLY with one word: extraction, explanation,
+comparison, summary, logistics, or general"""
 
     response = llm.invoke(
         [HumanMessage(content=classify_prompt)]
@@ -100,10 +108,12 @@ def supervisor_router(state: MultiAgentState) -> str:
     """
     domain = state.get("agent_used", "general")
     routing = {
-        "technical":  "tech_agent",
-        "research":   "research_agent",
-        "logistics":  "logistics_agent",
-        "general":    "general_agent",
+        "extraction":  "extraction_agent",
+        "explanation": "explanation_agent",
+        "comparison":  "comparison_agent",
+        "summary":     "summary_agent",
+        "logistics":   "logistics_agent",
+        "general":     "general_agent",
     }
     next_node = routing.get(domain, "general_agent")
     print(f"[Supervisor] Routing to: {next_node}")
