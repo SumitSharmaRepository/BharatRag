@@ -16,6 +16,8 @@ from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_core.messages import HumanMessage
 from pinecone import Pinecone as PineconeClient
 
+from src.retrieval.cache import get_cache
+
 #streaming imports
 from fastapi.responses import StreamingResponse
 import anthropic
@@ -189,8 +191,23 @@ async def upload_document(file: UploadFile = File(...)):
 @app.post("/query", response_model=QueryResponse)
 async def query_documents(request: QueryRequest):
     if not request.question.strip():
-        raise HTTPException(400, "Question cannot be empty")
+        raise HTTPException(400, "Question empty")
 
+    # Step 1 — Check cache
+    cache  = get_cache()
+    cached = cache.get(request.question)
+
+    if cached:
+        print(f"  [api] Cache HIT")
+        return QueryResponse(
+            answer     = cached["answer"],
+            sources    = cached["sources"],
+            language   = request.language,
+            doc_count  = len(cached["sources"]),
+            agent_used = "Cache",
+        )
+
+    # Step 2 — Normal pipeline
     filter_dict = None
     if request.doc_filter:
         filter_dict = {"doc_name": request.doc_filter}
@@ -209,7 +226,6 @@ async def query_documents(request: QueryRequest):
 
     doc_texts = []
     sources   = []
-
     for doc in docs:
         page     = doc.metadata.get("page", "?")
         doc_name = doc.metadata.get("doc_name", "unknown")
@@ -243,10 +259,19 @@ Question: {request.question}
 Answer:"""
 
     response = llm.invoke([HumanMessage(content=prompt)])
+    answer   = response.content
+    unique_sources = list(set(sources))
+
+    # Step 3 — Store in cache BEFORE return
+    cache.set(
+        question = request.question,
+        answer   = answer,
+        sources  = unique_sources,
+    )
 
     return QueryResponse(
-        answer     = response.content,
-        sources    = list(set(sources)),
+        answer     = answer,
+        sources    = unique_sources,
         language   = request.language,
         doc_count  = len(docs),
         agent_used = "RAGPipeline",
@@ -432,3 +457,14 @@ async def startup_event():
     print(f"Chunks:    {chunks}")
     print("API ready at http://localhost:8000")
     print("Docs at http://localhost:8000/docs")
+
+@app.get("/cache/stats")
+def cache_stats():
+    """GET /cache/stats — cache performance metrics"""
+    return get_cache().stats()
+
+@app.delete("/cache/clear")
+def cache_clear():
+    """DELETE /cache/clear — clear all cached answers"""
+    get_cache().clear()
+    return {"message": "Cache cleared"}

@@ -22,8 +22,22 @@ EMBEDDING_MODEL  = "sentence-transformers/all-MiniLM-L6-v2"
 # ── Shared instances ──────────────────────────────────
 # Created once, reused by all specialists
 
+
+# ── Two LLM tiers ─────────Cost Optimization───────────
+# Quality tier — for generating answers
+# Used by all specialist agents
 llm = ChatAnthropic(
     model             = "claude-sonnet-4-5",
+    temperature       = 0,
+    anthropic_api_key = ANTHROPIC_KEY,
+)
+
+# Economy tier — for simple decisions
+# Used by: grade, rewrite, hallucination, supervisor
+# 80% cheaper than Sonnet
+# Equally good for Yes/No decisions
+llm_fast = ChatAnthropic(
+    model             = "claude-haiku-4-5-20251001",
     temperature       = 0,
     anthropic_api_key = ANTHROPIC_KEY,
 )

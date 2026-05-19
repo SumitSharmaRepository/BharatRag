@@ -13,7 +13,7 @@
 
 from langchain_core.messages import HumanMessage
 from src.agents.state import MultiAgentState
-from src.specialists.base import llm
+from src.specialists.base import llm, llm_fast  # ← Both LLM tiers
 from src.memory.persistent import fetch_memories
 
 
@@ -88,7 +88,7 @@ Categories:
 Reply ONLY with one word: extraction, explanation,
 comparison, summary, logistics, or general"""
 
-    response = llm.invoke(
+    response = llm_fast.invoke(
         [HumanMessage(content=classify_prompt)]
     )
     domain   = response.content.strip().lower()
