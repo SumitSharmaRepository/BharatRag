@@ -1,12 +1,6 @@
-// ============================================
-// src/api/bharatrag.js
-// All FastAPI calls in one place.
-// Change BASE_URL when deploying to Railway.
-// ============================================
-
-const BASE_URL = ""
-// Empty = uses Vite proxy
-// Requests to /health go to localhost:8000/health automatically
+// Use VITE_API_URL in production
+// Fall back to localhost in development
+const BASE_URL = import.meta.env.VITE_API_URL || ""
 
 export async function checkHealth() {
   const res = await fetch(`${BASE_URL}/health`)
@@ -36,8 +30,7 @@ export async function uploadDocument(file) {
 
 export async function queryDocuments(
   question, language = "English",
-  userId   = "default_user",
-  docFilter = null
+  userId = "default_user", docFilter = null
 ) {
   const res = await fetch(`${BASE_URL}/query`, {
     method:  "POST",

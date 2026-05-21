@@ -34,11 +34,26 @@ app = FastAPI(
     version     = "1.0.0",
 )
 
+# app.add_middleware(
+#     CORSMiddleware,
+#     allow_origins = ["*"],
+#     allow_methods = ["*"],
+#     allow_headers = ["*"],
+# )
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins = ["*"],
-    allow_methods = ["*"],
-    allow_headers = ["*"],
+    allow_origins = [
+        "https://bharatrag.vercel.app",  # your Vercel URL
+        "http://localhost:5173",          # local dev
+        "http://localhost:5174",
+        "http://localhost:5175",
+        "http://localhost:5176",
+        "*",                              # allow all for now
+    ],
+    allow_methods  = ["*"],
+    allow_headers  = ["*"],
+    allow_credentials = True,
 )
 
 #Add Rate limiter after app creation to avoid circular imports with security.py
