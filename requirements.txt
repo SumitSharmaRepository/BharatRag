@@ -48,3 +48,4 @@ presidio-analyzer
 presidio-anonymizerpytest
 pytest-asyncio
 httpx
+httpx
