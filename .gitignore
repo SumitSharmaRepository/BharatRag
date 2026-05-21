@@ -1,18 +1,49 @@
+# Python
 venv/
 __pycache__/
 *.pyc
-.env
+*.pyo
 *.egg-info/
+
+# Secrets
+.env
+
+# Databases
 chroma_db/
+mem0_db/
+*.sqlite
+*.lock
+
+# Data files
+data/
+*.pdf
+
+# Logs
+*.log
 docker_build.log
-graphify-out/.graphify_root
-mem0_db/.lock
-.gitignore
-mem0_db/collection/bharatrag_memory/storage.sqlite
-mem0_db/meta.json
-mem0_db/collection/bharatrag_memory_entities/storage.sqlite
-graphify-out/manifest.json
-graphify-out/graph.json
-graphify-out/graph.html
-graphify-out/GRAPH_REPORT.md
-graphify-out/.graphify_labels.json
+
+# Generated results
+ragas_results*.json
+
+# VS Code extensions
+graphify-out/
+.vscode/
+
+# Node
+node_modules/
+package-lock.json
+
+# Build outputs
+frontend/dist/
+frontend/node_modules/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Test cache
+.pytest_cache/
+.coverage
+
+# Railway
+.railway/
