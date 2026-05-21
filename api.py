@@ -18,6 +18,17 @@ from pinecone import Pinecone as PineconeClient
 
 from src.retrieval.cache import get_cache
 
+#Security imports
+from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi.util import get_remote_address
+from slowapi.errors import RateLimitExceeded
+from fastapi import Request
+from src.security import (
+    validate_question,
+    validate_filename,
+    get_pii_detector,
+)
+
 #streaming imports
 from fastapi.responses import StreamingResponse
 import anthropic
@@ -40,6 +51,18 @@ app.add_middleware(
     allow_methods = ["*"],
     allow_headers = ["*"],
 )
+
+#Add Rate limiter after app creation to avoid circular imports with security.py
+# ── Rate limiter ──────────────────────────────────────
+limiter = Limiter(key_func=get_remote_address)
+app.state.limiter = limiter
+app.add_exception_handler(
+    RateLimitExceeded,
+    _rate_limit_exceeded_handler
+)
+# 10 requests per minute per IP for /query
+# 5 uploads per hour per IP for /upload
+# Prevents cost abuse and API hammering
 
 embeddings = HuggingFaceEmbeddings(model_name=EMBEDDING_MODEL)
 
@@ -148,10 +171,17 @@ def list_documents():
 
 
 @app.post("/upload", response_model=UploadResponse)
-async def upload_document(file: UploadFile = File(...)):
-    if not file.filename.endswith(".pdf"):
-        raise HTTPException(400, "Only PDF files accepted")
+@limiter.limit("5/hour")
+async def upload_document(
+    request: Request,
+    file:    UploadFile = File(...),
+):
+    # ── Filename validation ────────────────────────
+    fname_check = validate_filename(file.filename)
+    if not fname_check["valid"]:
+        raise HTTPException(400, fname_check["reason"])
 
+    # ── Save to temp file ──────────────────────────
     with tempfile.NamedTemporaryFile(
         delete=False, suffix=".pdf"
     ) as tmp:
@@ -159,29 +189,52 @@ async def upload_document(file: UploadFile = File(...)):
         tmp_path = tmp.name
 
     try:
+        # ── Load PDF ───────────────────────────────
         loader = PyPDFLoader(tmp_path)
         pages  = loader.load()
 
         for page in pages:
             page.metadata["doc_name"] = file.filename
 
+        # ── Chunk ──────────────────────────────────
         splitter = RecursiveCharacterTextSplitter(
             chunk_size=500, chunk_overlap=100
         )
         chunks = splitter.split_documents(pages)
 
+        # ── PII detection + redaction ──────────────
+        pii       = get_pii_detector()
+        pii_found = set()
+        clean_chunks = []
+
+        for chunk in chunks:
+            detected = pii.detect(chunk.page_content)
+            if detected:
+                pii_found.update(detected)
+                chunk.page_content = pii.redact(
+                    chunk.page_content
+                )
+            clean_chunks.append(chunk)
+
+        if pii_found:
+            print(
+                f"  [security] PII redacted: {pii_found}"
+            )
+
+        # ── Store in Pinecone ──────────────────────
         vs = get_vectorstore()
-        vs.add_documents(chunks)
+        vs.add_documents(clean_chunks)
 
         total = get_pinecone_chunk_count()
 
         return UploadResponse(
             filename     = file.filename,
             pages        = len(pages),
-            chunks       = len(chunks),
+            chunks       = len(clean_chunks),
             total_chunks = total,
             message      = f"Indexed {file.filename}",
         )
+
     except Exception as e:
         raise HTTPException(500, f"Error: {str(e)}")
     finally:
@@ -189,41 +242,51 @@ async def upload_document(file: UploadFile = File(...)):
 
 
 @app.post("/query", response_model=QueryResponse)
-async def query_documents(request: QueryRequest):
-    if not request.question.strip():
-        raise HTTPException(400, "Question empty")
+@limiter.limit("10/minute")
+async def query_documents(
+    request: Request,
+    body:    QueryRequest,
+):
+    # ── Input validation ───────────────────────────
+    validation = validate_question(body.question)
+    if not validation["valid"]:
+        raise HTTPException(400, validation["reason"])
 
-    # Step 1 — Check cache
+    question = validation["cleaned"]
+
+    # ── Check cache ────────────────────────────────
     cache  = get_cache()
-    cached = cache.get(request.question)
+    cached = cache.get(question)
 
     if cached:
         print(f"  [api] Cache HIT")
         return QueryResponse(
             answer     = cached["answer"],
             sources    = cached["sources"],
-            language   = request.language,
+            language   = body.language,
             doc_count  = len(cached["sources"]),
             agent_used = "Cache",
         )
 
-    # Step 2 — Normal pipeline
+    # ── Build filter ───────────────────────────────
     filter_dict = None
-    if request.doc_filter:
-        filter_dict = {"doc_name": request.doc_filter}
+    if body.doc_filter:
+        filter_dict = {"doc_name": body.doc_filter}
 
+    # ── Retrieve ───────────────────────────────────
     retriever = get_retriever(filter_dict)
-    docs      = retriever.invoke(request.question)
+    docs      = retriever.invoke(question)
 
     if not docs:
         return QueryResponse(
             answer     = "I could not find relevant information.",
             sources    = [],
-            language   = request.language,
+            language   = body.language,
             doc_count  = 0,
             agent_used = "RAGPipeline",
         )
 
+    # ── Format context ─────────────────────────────
     doc_texts = []
     sources   = []
     for doc in docs:
@@ -231,17 +294,21 @@ async def query_documents(request: QueryRequest):
         doc_name = doc.metadata.get("doc_name", "unknown")
         source   = f"{doc_name}, Page {int(page)+1}"
         sources.append(source)
-        doc_texts.append(f"[{source}]\n{doc.page_content}")
+        doc_texts.append(
+            f"[{source}]\n{doc.page_content}"
+        )
 
     context = "\n\n".join(doc_texts)
 
+    # ── Language instruction ───────────────────────
     lang_instruction = {
         "English":       "Answer in clear English.",
         "Hindi / हिंदी": "हिंदी में जवाब दें।",
         "Hinglish":      "Answer in Hinglish naturally.",
         "Arabic / عربي": "أجب باللغة العربية بوضوح.",
-    }.get(request.language, "Answer in clear English.")
+    }.get(body.language, "Answer in clear English.")
 
+    # ── Generate ───────────────────────────────────
     prompt = f"""You are BharatRAG — an AI document assistant
 for Indian professionals.
 
@@ -254,17 +321,17 @@ Always cite which document your answer comes from.
 Context:
 {context}
 
-Question: {request.question}
+Question: {question}
 
 Answer:"""
 
-    response = llm.invoke([HumanMessage(content=prompt)])
-    answer   = response.content
+    response       = llm.invoke([HumanMessage(content=prompt)])
+    answer         = response.content
     unique_sources = list(set(sources))
 
-    # Step 3 — Store in cache BEFORE return
+    # ── Store in cache ─────────────────────────────
     cache.set(
-        question = request.question,
+        question = question,
         answer   = answer,
         sources  = unique_sources,
     )
@@ -272,7 +339,7 @@ Answer:"""
     return QueryResponse(
         answer     = answer,
         sources    = unique_sources,
-        language   = request.language,
+        language   = body.language,
         doc_count  = len(docs),
         agent_used = "RAGPipeline",
     )

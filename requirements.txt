@@ -43,3 +43,8 @@ mem0ai
 
 # WhatsApp
 twilio
+slowapi
+presidio-analyzer
+presidio-anonymizerpytest
+pytest-asyncio
+httpx

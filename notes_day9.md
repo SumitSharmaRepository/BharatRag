@@ -350,3 +350,33 @@ For production:
 → This happens Day 29
 
 For now ngrok is fine for testing and demos.
+
+
+# Security
+# 1. Rate limiting    — prevent API abuse
+# 2. Input validation — block malicious input
+# 3. Prompt injection — detect attack patterns
+# 4. PII detection    — redact sensitive data
+>>>>>pip install slowapi presidio-analyzer presidio-anonymizer
+>>>>>pip install spacy
+>>>>>python3 -m spacy download en_core_web_lg
+
+# Rule To Remember
+
+When using @limiter.limit():
+→ First param MUST be: request: Request
+→ FastAPI HTTP request object
+→ slowapi reads IP from this
+
+Your body/data params come AFTER:
+→ body: QueryRequest  ← renamed from request
+→ file: UploadFile    ← unchanged
+→ anything else
+
+Naming clash:
+→ BEFORE: request: QueryRequest (your body)
+→ AFTER:  request: Request (HTTP) + body: QueryRequest
+
+# TEST SUITE
+>>>>pip install pytest pytest-asyncio httpx
+
