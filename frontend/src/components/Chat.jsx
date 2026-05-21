@@ -8,13 +8,16 @@ import { useStream } from "../hooks/useStream"
 export default function Chat({ language }) {
   const [messages, setMessages] = useState([
     {
-      id:       "welcome",
-      role:     "assistant",
-      content:  "Namaste! Upload a PDF and ask me " +
-                "anything. I support English, Hindi, " +
-                "Hinglish, and Arabic.",
-      agent:    null,
-      sources:  [],
+      id:      "welcome",
+      role:    "assistant",
+      content: "🙏 Namaste! I am BharatRAG — your AI " +
+               "document assistant.\n\n" +
+               "Upload a PDF from the sidebar and ask " +
+               "me anything in English, Hindi, " +
+               "Hinglish, or Arabic.\n\n" +
+               "Built with Claude AI + LangGraph.",
+      agent:   null,
+      sources: [],
       streaming: false,
     }
   ])

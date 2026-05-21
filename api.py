@@ -504,6 +504,33 @@ Answer:"""
     )
 
 
+@app.delete("/documents/{doc_name}")
+async def delete_document(doc_name: str):
+    """
+    DELETE /documents/{doc_name}
+    Remove all chunks for a specific document
+    from Pinecone.
+    """
+    try:
+        pc    = PineconeClient(api_key=PINECONE_API_KEY)
+        index = pc.Index(PINECONE_INDEX)
+
+        # Pinecone delete by metadata filter
+        index.delete(
+            filter={"doc_name": {"$eq": doc_name}}
+        )
+
+        # Clear cache since docs changed
+        get_cache().clear()
+
+        return {
+            "message": f"Deleted {doc_name}",
+            "status":  "deleted"
+        }
+    except Exception as e:
+        raise HTTPException(500, f"Error: {str(e)}")
+
+
 @app.delete("/reset")
 def reset_database():
     try:

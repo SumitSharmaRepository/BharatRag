@@ -377,6 +377,9 @@ Naming clash:
 → BEFORE: request: QueryRequest (your body)
 → AFTER:  request: Request (HTTP) + body: QueryRequest
 
-# TEST SUITE
+# TEST SUITE Added
 >>>>pip install pytest pytest-asyncio httpx
+
+
+# Added Delete/remove
 

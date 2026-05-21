@@ -56,6 +56,15 @@ export async function queryDocuments(
   return res.json()
 }
 
+export async function deleteDocument(filename) {
+  const encoded = encodeURIComponent(filename)
+  const res = await fetch(`${BASE_URL}/documents/${encoded}`, {
+    method: "DELETE",
+  })
+  if (!res.ok) throw new Error("Delete failed")
+  return res.json()
+}
+
 export async function resetDatabase() {
   const res = await fetch(`${BASE_URL}/reset`, {
     method: "DELETE",

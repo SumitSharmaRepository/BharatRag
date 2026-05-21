@@ -6,7 +6,7 @@ import Header from "./components/Header"
 import Sidebar from "./components/Sidebar"
 import Chat from "./components/Chat"
 import ThemeToggle from "./components/ThemeToggle"
-import { checkHealth, listDocuments } from "./api/bharatrag"
+import { checkHealth, listDocuments, deleteDocument } from "./api/bharatrag"
 
 export default function App() {
   const [language, setLanguage] = useState("English")
@@ -45,6 +45,20 @@ export default function App() {
     )
   }
 
+  async function handleDelete(filename) {
+    try {
+      await deleteDocument(filename)
+      setDocuments(prev => prev.filter(d => d !== filename))
+    } catch (e) {
+      console.error("Delete failed:", e)
+    }
+  }
+
+  function handleDeleteAll() {
+    documents.forEach(doc => deleteDocument(doc))
+    setDocuments([])
+  }
+
   return (
     <div className="h-screen flex flex-col bg-slate-50">
       <Header
@@ -62,6 +76,8 @@ export default function App() {
         <Sidebar
           documents={documents}
           onUpload={handleUpload}
+          onDelete={handleDelete}
+          onDeleteAll={handleDeleteAll}
         />
         <main className="
           flex-1 flex flex-col

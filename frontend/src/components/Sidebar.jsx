@@ -6,6 +6,8 @@ const AGENT_COLORS = {
   ResearchAgent:  "bg-purple-100 text-purple-800 dark:bg-purple-900 dark:text-purple-200",
   LogisticsAgent: "bg-orange-100 text-orange-800 dark:bg-orange-900 dark:text-orange-200",
   GeneralAgent:   "bg-slate-100 text-slate-700 dark:bg-slate-700 dark:text-slate-200",
+  Cache:          "bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200",
+  RAGPipeline:    "bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200",
 }
 
 export function AgentBadge({ agent }) {
@@ -20,7 +22,7 @@ export function AgentBadge({ agent }) {
   )
 }
 
-export default function Sidebar({ documents, onUpload }) {
+export default function Sidebar({ documents, onUpload, onDelete, onDeleteAll }) {
   const [uploading, setUploading] = useState(false)
   const [dragOver,  setDragOver]  = useState(false)
   const [error,     setError]     = useState("")
@@ -62,8 +64,18 @@ export default function Sidebar({ documents, onUpload }) {
           text-xs font-semibold uppercase
           tracking-wide mb-3
           text-slate-500 dark:text-slate-400
+          flex items-center justify-between
         ">
           Documents
+          {documents.length > 0 && (
+            <span className="
+              bg-brand text-white text-xs
+              px-1.5 py-0.5 rounded-full
+              font-normal normal-case
+            ">
+              {documents.length}
+            </span>
+          )}
         </p>
 
         {documents.length === 0 ? (
@@ -78,8 +90,9 @@ export default function Sidebar({ documents, onUpload }) {
                 flex items-center gap-2
                 rounded-lg px-3 py-2
                 bg-slate-50 dark:bg-slate-800
+                group
               ">
-                <span className="text-brand text-sm">
+                <span className="text-brand text-sm shrink-0">
                   &#128196;
                 </span>
                 <div className="flex-1 min-w-0">
@@ -90,10 +103,35 @@ export default function Sidebar({ documents, onUpload }) {
                     {doc}
                   </p>
                 </div>
-                <span className="text-green-500 text-xs">✓</span>
+                <button
+                  onClick={() => onDelete(doc)}
+                  className="
+                    opacity-0 group-hover:opacity-100
+                    text-slate-400 hover:text-red-500
+                    transition-all text-xs
+                    shrink-0 px-1
+                  "
+                  title="Remove document"
+                  aria-label={`Remove ${doc}`}
+                >
+                  ✕
+                </button>
               </li>
             ))}
           </ul>
+        )}
+
+        {documents.length > 1 && (
+          <button
+            onClick={onDeleteAll}
+            className="
+              text-xs text-slate-400
+              hover:text-red-500
+              transition-colors mt-1
+            "
+          >
+            Clear all documents
+          </button>
         )}
       </div>
 
