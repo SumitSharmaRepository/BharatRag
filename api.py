@@ -64,18 +64,38 @@ app.add_exception_handler(
 # 5 uploads per hour per IP for /upload
 # Prevents cost abuse and API hammering
 
-embeddings = HuggingFaceEmbeddings(model_name=EMBEDDING_MODEL)
+#embeddings = HuggingFaceEmbeddings(model_name=EMBEDDING_MODEL)
+# Lazy load — only when first request arrives
+_embeddings = None
 
-llm = ChatAnthropic(
-    model             = "claude-sonnet-4-5",
-    temperature       = 0,
-    anthropic_api_key = ANTHROPIC_KEY,
-)
+def get_embeddings():
+    global _embeddings
+    if _embeddings is None:
+        print("Loading embeddings model...", flush=True)
+        _embeddings = HuggingFaceEmbeddings(
+            model_name=EMBEDDING_MODEL
+        )
+        print("Embeddings ready.", flush=True)
+    return _embeddings
+
+
+# Lazy load LLM
+_llm = None
+
+def get_llm():
+    global _llm
+    if _llm is None:
+        _llm = ChatAnthropic(
+            model             = "claude-sonnet-4-5",
+            temperature       = 0,
+            anthropic_api_key = ANTHROPIC_KEY,
+        )
+    return _llm
 
 def get_vectorstore():
     return PineconeVectorStore(
         index_name = PINECONE_INDEX,
-        embedding  = embeddings,
+        embedding  = get_embeddings(),  # lazy load
     )
 
 def get_retriever(filter_dict: dict = None):
@@ -544,13 +564,11 @@ def reset_database():
 
 @app.on_event("startup")
 async def startup_event():
-    print("BharatRAG API starting...")
-    print(f"Model:     claude-sonnet-4-5")
-    print(f"Vector DB: Pinecone ({PINECONE_INDEX})")
-    chunks = get_pinecone_chunk_count()
-    print(f"Chunks:    {chunks}")
-    print("API ready at http://localhost:8000")
-    print("Docs at http://localhost:8000/docs")
+    print("BharatRAG API starting...", flush=True)
+    print(f"Model:     claude-sonnet-4-5", flush=True)
+    print(f"Vector DB: Pinecone ({PINECONE_INDEX})", flush=True)
+    print("API ready — embeddings load on first request", flush=True)
+    print(f"Docs at /docs", flush=True)
 
 @app.get("/cache/stats")
 def cache_stats():
