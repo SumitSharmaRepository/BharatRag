@@ -8,16 +8,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import Optional
 
-from langchain_anthropic import ChatAnthropic
-from langchain_pinecone import PineconeVectorStore
-from langchain_community.document_loaders import PyPDFLoader
-from langchain_text_splitters import RecursiveCharacterTextSplitter
-from langchain_core.messages import HumanMessage
-from pinecone import Pinecone as PineconeClient
-
 from src.retrieval.cache import get_cache
 
-#Security imports
 from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
@@ -28,9 +20,7 @@ from src.security import (
     get_pii_detector,
 )
 
-#streaming imports
 from fastapi.responses import StreamingResponse
-import anthropic
 import json
 
 EMBEDDING_MODEL  = "sentence-transformers/all-MiniLM-L6-v2"
@@ -85,6 +75,7 @@ _llm = None
 def get_llm():
     global _llm
     if _llm is None:
+        from langchain_anthropic import ChatAnthropic
         _llm = ChatAnthropic(
             model             = "claude-sonnet-4-5",
             temperature       = 0,
@@ -93,9 +84,10 @@ def get_llm():
     return _llm
 
 def get_vectorstore():
+    from langchain_pinecone import PineconeVectorStore
     return PineconeVectorStore(
         index_name = PINECONE_INDEX,
-        embedding  = get_embeddings(),  # lazy load
+        embedding  = get_embeddings(),
     )
 
 def get_retriever(filter_dict: dict = None):
@@ -108,6 +100,7 @@ def get_retriever(filter_dict: dict = None):
 
 def get_pinecone_chunk_count() -> int:
     try:
+        from pinecone import Pinecone as PineconeClient
         pc    = PineconeClient(api_key=PINECONE_API_KEY)
         index = pc.Index(PINECONE_INDEX)
         stats = index.describe_index_stats()
@@ -117,6 +110,7 @@ def get_pinecone_chunk_count() -> int:
 
 def get_pinecone_documents() -> list:
     try:
+        from pinecone import Pinecone as PineconeClient
         pc    = PineconeClient(api_key=PINECONE_API_KEY)
         index = pc.Index(PINECONE_INDEX)
         dummy  = [0.0] * 384
@@ -210,6 +204,8 @@ async def upload_document(
 
     try:
         # ── Load PDF ───────────────────────────────
+        from langchain_community.document_loaders import PyPDFLoader
+        from langchain_text_splitters import RecursiveCharacterTextSplitter
         loader = PyPDFLoader(tmp_path)
         pages  = loader.load()
 
@@ -345,6 +341,7 @@ Question: {question}
 
 Answer:"""
 
+    from langchain_core.messages import HumanMessage
     response       = get_llm().invoke([HumanMessage(content=prompt)])
     answer         = response.content
     unique_sources = list(set(sources))
@@ -470,6 +467,7 @@ Answer:"""
 
             # Step 2 — Stream Claude response
             # Use Anthropic client directly for streaming
+            import anthropic
             anthropic_client = anthropic.Anthropic(
                 api_key=ANTHROPIC_KEY
             )
@@ -532,6 +530,7 @@ async def delete_document(doc_name: str):
     from Pinecone.
     """
     try:
+        from pinecone import Pinecone as PineconeClient
         pc    = PineconeClient(api_key=PINECONE_API_KEY)
         index = pc.Index(PINECONE_INDEX)
 
@@ -554,6 +553,7 @@ async def delete_document(doc_name: str):
 @app.delete("/reset")
 def reset_database():
     try:
+        from pinecone import Pinecone as PineconeClient
         pc    = PineconeClient(api_key=PINECONE_API_KEY)
         index = pc.Index(PINECONE_INDEX)
         index.delete(delete_all=True)
