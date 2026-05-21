@@ -45,7 +45,7 @@ mem0ai
 twilio
 slowapi
 presidio-analyzer
-presidio-anonymizerpytest
+presidio-anonymizer
+pytest
 pytest-asyncio
-httpx
 httpx
