@@ -10,7 +10,6 @@ from typing import Optional
 
 from langchain_anthropic import ChatAnthropic
 from langchain_pinecone import PineconeVectorStore
-from langchain_huggingface import HuggingFaceEmbeddings
 from langchain_community.document_loaders import PyPDFLoader
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_core.messages import HumanMessage
@@ -71,6 +70,7 @@ _embeddings = None
 def get_embeddings():
     global _embeddings
     if _embeddings is None:
+        from langchain_huggingface import HuggingFaceEmbeddings
         print("Loading embeddings model...", flush=True)
         _embeddings = HuggingFaceEmbeddings(
             model_name=EMBEDDING_MODEL
@@ -345,7 +345,7 @@ Question: {question}
 
 Answer:"""
 
-    response       = llm.invoke([HumanMessage(content=prompt)])
+    response       = get_llm().invoke([HumanMessage(content=prompt)])
     answer         = response.content
     unique_sources = list(set(sources))
 
