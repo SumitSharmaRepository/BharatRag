@@ -20,7 +20,6 @@
 import os
 import json
 import time
-from langchain_huggingface import HuggingFaceEmbeddings
 import numpy as np
 
 EMBEDDING_MODEL  = "sentence-transformers/all-MiniLM-L6-v2"
@@ -40,9 +39,7 @@ class SemanticCache:
     """
 
     def __init__(self):
-        self.embeddings = HuggingFaceEmbeddings(
-            model_name=EMBEDDING_MODEL
-        )
+        self._embeddings = None  # lazy-loaded on first use
         self.cache     = []
         # Each entry: {
         #   "question":  original question
@@ -54,6 +51,15 @@ class SemanticCache:
         # }
         self.hits   = 0
         self.misses = 0
+
+    def _get_embeddings(self):
+        if self._embeddings is None:
+            from langchain_huggingface import HuggingFaceEmbeddings
+            print("Loading cache embeddings model...", flush=True)
+            self._embeddings = HuggingFaceEmbeddings(
+                model_name=EMBEDDING_MODEL
+            )
+        return self._embeddings
 
     def _cosine_similarity(
         self, a: list, b: list
@@ -78,7 +84,7 @@ class SemanticCache:
             return None
 
         # Embed the new question
-        query_embedding = self.embeddings.embed_query(
+        query_embedding = self._get_embeddings().embed_query(
             question
         )
 
@@ -124,7 +130,7 @@ class SemanticCache:
         sources:  list = None,
     ) -> None:
         """Store question + answer in cache."""
-        embedding = self.embeddings.embed_query(question)
+        embedding = self._get_embeddings().embed_query(question)
 
         self.cache.append({
             "question":  question,
