@@ -18,7 +18,7 @@ import { useRef } from "react"
 
 // Direct URL bypasses Vite proxy
 // Vite buffers SSE responses — kills streaming
-const STREAM_URL = "http://172.25.210.165:8000"
+const STREAM_URL = "https://bharatrag-api.onrender.com"//"http://172.25.210.165:8000"
 // ↑ Replace with your actual IP from hostname -I
 
 
