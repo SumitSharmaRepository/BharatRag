@@ -22,7 +22,6 @@ import json
 import time
 import numpy as np
 
-EMBEDDING_MODEL  = "sentence-transformers/all-MiniLM-L6-v2"
 SIMILARITY_THRESHOLD = 0.92
 # 0.92 = very similar questions hit cache
 # Lower = more cache hits but less accurate
@@ -54,11 +53,8 @@ class SemanticCache:
 
     def _get_embeddings(self):
         if self._embeddings is None:
-            from langchain_huggingface import HuggingFaceEmbeddings
-            print("Loading cache embeddings model...", flush=True)
-            self._embeddings = HuggingFaceEmbeddings(
-                model_name=EMBEDDING_MODEL
-            )
+            from src.embeddings import get_embeddings
+            self._embeddings = get_embeddings()
         return self._embeddings
 
     def _cosine_similarity(

@@ -17,16 +17,18 @@ import glob
 from dotenv import load_dotenv
 load_dotenv()
 
+import sys
+sys.path.insert(0, "/home/sumit/bharatrag")
+
 from pinecone import Pinecone, ServerlessSpec
 from langchain_pinecone import PineconeVectorStore
-from langchain_huggingface import HuggingFaceEmbeddings
 from langchain_community.document_loaders import PyPDFLoader
 from langchain_text_splitters import RecursiveCharacterTextSplitter
+from src.embeddings import get_embeddings
 
 # ── Credentials ───────────────────────────────────────
 PINECONE_API_KEY = os.getenv("PINECONE_API_KEY")
 PINECONE_INDEX   = os.getenv("PINECONE_INDEX", "bharatrag")
-EMBEDDING_MODEL  = "sentence-transformers/all-MiniLM-L6-v2"
 DATA_PATH        = "/home/sumit/bharatrag/data"
 
 # ── Connect to Pinecone ───────────────────────────────
@@ -35,10 +37,8 @@ pc = Pinecone(api_key=PINECONE_API_KEY)
 print("Connected!")
 
 # ── Embedding model ───────────────────────────────────
-print("Loading embedding model...")
-embeddings = HuggingFaceEmbeddings(
-    model_name=EMBEDDING_MODEL
-)
+print("Using Pinecone inference embeddings (multilingual-e5-large, 1024 dims)...")
+embeddings = get_embeddings()
 print("Embeddings ready")
 
 # ============================================

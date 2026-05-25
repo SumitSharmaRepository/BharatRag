@@ -6,17 +6,8 @@
 import os
 import shutil
 from langchain_community.vectorstores import Chroma
-from langchain_huggingface import HuggingFaceEmbeddings
-from config import EMBEDDING_MODEL, CHROMA_DB_PATH, RETRIEVAL_K
-
-def get_embeddings():
-    """
-    Create and return the embedding model.
-    Cached pattern — create once, reuse many times.
-    """
-    return HuggingFaceEmbeddings(
-        model_name=EMBEDDING_MODEL
-    )
+from config import CHROMA_DB_PATH, RETRIEVAL_K
+from src.embeddings import get_embeddings
 
 def create_vectorstore(chunks: list,
                        reset: bool = True) -> Chroma:

@@ -16,14 +16,13 @@ import os
 from langchain_anthropic import ChatAnthropic
 from langchain_core.messages import HumanMessage
 from langchain_pinecone import PineconeVectorStore
-from langchain_huggingface import HuggingFaceEmbeddings
 from pinecone import Pinecone
 from src.agents.state import MultiAgentState
+from src.embeddings import get_embeddings
 
 ANTHROPIC_KEY    = os.getenv("ANTHROPIC_API_KEY")
 PINECONE_API_KEY = os.getenv("PINECONE_API_KEY")
 PINECONE_INDEX   = os.getenv("PINECONE_INDEX", "bharatrag")
-EMBEDDING_MODEL  = "sentence-transformers/all-MiniLM-L6-v2"
 
 llm = ChatAnthropic(
     model             = "claude-sonnet-4-5",
@@ -31,9 +30,7 @@ llm = ChatAnthropic(
     anthropic_api_key = ANTHROPIC_KEY,
 )
 
-embeddings = HuggingFaceEmbeddings(
-    model_name=EMBEDDING_MODEL
-)
+embeddings = get_embeddings()
 
 # Language instructions
 LANG_INSTRUCTIONS = {

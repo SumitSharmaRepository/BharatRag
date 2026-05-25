@@ -12,47 +12,42 @@
 import os
 from mem0 import Memory
 
-ANTHROPIC_KEY   = os.getenv("ANTHROPIC_API_KEY")
-EMBEDDING_MODEL = "sentence-transformers/all-MiniLM-L6-v2"
-MEM0_DB_PATH    = "/home/sumit/bharatrag/mem0_db"
+ANTHROPIC_KEY = os.getenv("ANTHROPIC_API_KEY")
+MEM0_DB_PATH  = "/home/sumit/bharatrag/mem0_db"
 
-# ── Mem0 config ───────────────────────────────────────
-# Uses Haiku for fact extraction (cheap)
-# Uses HuggingFace for embeddings (free)
-# dims=384 MUST match embedding model
-_config = {
-    "llm": {
-        "provider": "anthropic",
-        "config": {
-            "model":   "claude-haiku-4-5-20251001",
-            "api_key": ANTHROPIC_KEY,
-        }
-    },
-    "embedder": {
-        "provider": "huggingface",
-        "config": {
-            "model":          EMBEDDING_MODEL,
-            "embedding_dims": 384,
-        }
-    },
-    "vector_store": {
-        "provider": "qdrant",
-        "config": {
-            "collection_name":      "bharatrag_memory",
-            "embedding_model_dims": 384,
-            "on_disk":              True,
-            "path":                 MEM0_DB_PATH,
-        }
-    }
-}
-
-# Singleton — initialised once at import
+# Singleton — initialised lazily on first use
 _memory = None
 
 def get_memory() -> Memory:
-    """Get or create Mem0 instance."""
+    """Get or create Mem0 instance (lazy init)."""
     global _memory
     if _memory is None:
+        from src.embeddings import get_embeddings
+        _config = {
+            "llm": {
+                "provider": "anthropic",
+                "config": {
+                    "model":   "claude-haiku-4-5-20251001",
+                    "api_key": ANTHROPIC_KEY,
+                }
+            },
+            "embedder": {
+                "provider": "langchain",
+                "config": {
+                    "model":          get_embeddings(),
+                    "embedding_dims": 1024,
+                }
+            },
+            "vector_store": {
+                "provider": "qdrant",
+                "config": {
+                    "collection_name":      "bharatrag_memory",
+                    "embedding_model_dims": 1024,
+                    "on_disk":              True,
+                    "path":                 MEM0_DB_PATH,
+                }
+            }
+        }
         _memory = Memory.from_config(_config)
     return _memory
 

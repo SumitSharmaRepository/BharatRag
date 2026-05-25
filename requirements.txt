@@ -13,7 +13,6 @@ langchain
 langchain-anthropic
 langchain-community
 langchain-core
-langchain-huggingface
 langchain-text-splitters
 langchain-pinecone
 langchain-chroma
@@ -26,9 +25,6 @@ langsmith
 pinecone
 pinecone-text
 chromadb
-
-# Embeddings
-sentence-transformers
 
 # PDF processing
 pypdf

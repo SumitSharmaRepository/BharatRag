@@ -21,17 +21,15 @@ load_dotenv()
 
 from pinecone import Pinecone
 from pinecone_text.sparse import BM25Encoder
-from langchain_huggingface import HuggingFaceEmbeddings
 from langchain_core.documents import Document
+
+from src.embeddings import get_embeddings
 
 PINECONE_API_KEY = os.getenv("PINECONE_API_KEY")
 PINECONE_INDEX   = os.getenv("PINECONE_INDEX", "bharatrag")
-EMBEDDING_MODEL  = "sentence-transformers/all-MiniLM-L6-v2"
 
 # ── Shared instances ──────────────────────────────────
-embeddings = HuggingFaceEmbeddings(
-    model_name=EMBEDDING_MODEL
-)
+embeddings = get_embeddings()
 
 pc    = Pinecone(api_key=PINECONE_API_KEY)
 index = pc.Index(PINECONE_INDEX)

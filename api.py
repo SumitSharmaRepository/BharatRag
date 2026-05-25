@@ -23,7 +23,6 @@ from src.security import (
 from fastapi.responses import StreamingResponse
 import json
 
-EMBEDDING_MODEL  = "sentence-transformers/all-MiniLM-L6-v2"
 ANTHROPIC_KEY    = os.getenv("ANTHROPIC_API_KEY")
 PINECONE_API_KEY = os.getenv("PINECONE_API_KEY")
 PINECONE_INDEX   = os.getenv("PINECONE_INDEX", "bharatrag")
@@ -68,20 +67,9 @@ app.add_exception_handler(
 # 5 uploads per hour per IP for /upload
 # Prevents cost abuse and API hammering
 
-#embeddings = HuggingFaceEmbeddings(model_name=EMBEDDING_MODEL)
-# Lazy load — only when first request arrives
-_embeddings = None
-
 def get_embeddings():
-    global _embeddings
-    if _embeddings is None:
-        from langchain_huggingface import HuggingFaceEmbeddings
-        print("Loading embeddings model...", flush=True)
-        _embeddings = HuggingFaceEmbeddings(
-            model_name=EMBEDDING_MODEL
-        )
-        print("Embeddings ready.", flush=True)
-    return _embeddings
+    from src.embeddings import get_embeddings as _get
+    return _get()
 
 
 # Lazy load LLM
@@ -128,7 +116,7 @@ def get_pinecone_documents() -> list:
         from pinecone import Pinecone as PineconeClient
         pc    = PineconeClient(api_key=PINECONE_API_KEY)
         index = pc.Index(PINECONE_INDEX)
-        dummy  = [0.0] * 384
+        dummy  = [0.0] * 1024
         result = index.query(
             vector           = dummy,
             top_k            = 100,
