@@ -1,5 +1,6 @@
 import { useState, useRef } from "react"
 import { uploadDocument } from "../api/bharatrag"
+import UploadProgress from "./UploadProgress"
 
 const AGENT_COLORS = {
   TechAgent:      "bg-teal-100 text-teal-800 dark:bg-teal-900 dark:text-teal-200",
@@ -23,9 +24,9 @@ export function AgentBadge({ agent }) {
 }
 
 export default function Sidebar({ documents, onUpload, onDelete, onDeleteAll }) {
-  const [uploading, setUploading] = useState(false)
-  const [dragOver,  setDragOver]  = useState(false)
-  const [error,     setError]     = useState("")
+  const [uploadState, setUploadState] = useState("idle") // "idle"|"progress"|"done"|"failed"
+  const [dragOver,    setDragOver]    = useState(false)
+  const [error,       setError]       = useState("")
   const inputRef = useRef()
 
   async function handleFile(file) {
@@ -34,21 +35,28 @@ export default function Sidebar({ documents, onUpload, onDelete, onDeleteAll }) 
       return
     }
     setError("")
-    setUploading(true)
+    if (inputRef.current) inputRef.current.value = ""
+    setUploadState("progress")
     try {
       const result = await uploadDocument(file)
-      onUpload(result)
+      setUploadState("done")
+      setTimeout(() => {
+        onUpload(result)
+        setUploadState("idle")
+      }, 1500)
     } catch (e) {
-      setError(e.message)
-    } finally {
-      setUploading(false)
+      setUploadState("failed")
+      setTimeout(() => {
+        setError(e.message)
+        setUploadState("idle")
+      }, 1500)
     }
   }
 
   function onDrop(e) {
     e.preventDefault()
     setDragOver(false)
-    handleFile(e.dataTransfer.files[0])
+    if (uploadState === "idle") handleFile(e.dataTransfer.files[0])
   }
 
   return (
@@ -138,13 +146,16 @@ export default function Sidebar({ documents, onUpload, onDelete, onDeleteAll }) 
       {/* Upload zone */}
       <div
         onDrop={onDrop}
-        onDragOver={e => { e.preventDefault(); setDragOver(true) }}
+        onDragOver={e => { e.preventDefault(); uploadState === "idle" && setDragOver(true) }}
         onDragLeave={() => setDragOver(false)}
-        onClick={() => inputRef.current?.click()}
+        onClick={() => uploadState === "idle" && inputRef.current?.click()}
         className={`
           border-2 border-dashed rounded-xl
-          p-4 text-center cursor-pointer
+          p-4 text-center
           transition-colors duration-150
+          ${uploadState !== "idle"
+            ? "cursor-not-allowed opacity-75"
+            : "cursor-pointer"}
           ${dragOver
             ? "border-brand bg-brand-light dark:bg-brand/10"
             : "border-slate-200 dark:border-slate-700 hover:border-brand/50"}
@@ -157,15 +168,12 @@ export default function Sidebar({ documents, onUpload, onDelete, onDeleteAll }) 
           className="hidden"
           onChange={e => handleFile(e.target.files[0])}
         />
-        {uploading ? (
-          <p className="text-xs text-brand animate-pulse">
-            Uploading...
-          </p>
+        {uploadState !== "idle" ? (
+          <UploadProgress uploadState={uploadState} />
         ) : (
           <>
             <p className="text-2xl mb-1">&#8679;</p>
-            <p className="text-xs
-              text-slate-500 dark:text-slate-400">
+            <p className="text-xs text-slate-500 dark:text-slate-400">
               Drop PDF or click
             </p>
           </>

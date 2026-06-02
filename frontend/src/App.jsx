@@ -14,6 +14,12 @@ export default function App() {
   const [documents, setDocuments] = useState([])
   const [dark, setDark] = useState(false)
 
+  // Pre-wake the Render server while the user is still choosing a file
+  useEffect(() => {
+    const BASE_URL = import.meta.env.VITE_API_URL || ""
+    fetch(`${BASE_URL}/health`).catch(() => {})
+  }, [])
+
   // Apply dark class to html element
   useEffect(() => {
     if (dark) {
