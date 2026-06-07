@@ -1,5 +1,3 @@
-// Use VITE_API_URL in production
-// Fall back to localhost in development
 const BASE_URL = import.meta.env.VITE_API_URL || ""
 
 export async function checkHealth() {
@@ -8,15 +6,18 @@ export async function checkHealth() {
   return res.json()
 }
 
-export async function listDocuments() {
-  const res = await fetch(`${BASE_URL}/documents`)
+export async function listDocuments(userId) {
+  const res = await fetch(
+    `${BASE_URL}/documents?user_id=${encodeURIComponent(userId)}`
+  )
   if (!res.ok) throw new Error("Failed to list documents")
-  return res.json()
+  return res.json()  // { active: [...], archived: [...], total_chunks: N }
 }
 
-export async function uploadDocument(file) {
+export async function uploadDocument(file, userId) {
   const form = new FormData()
   form.append("file", file)
+  form.append("user_id", userId)
   const res = await fetch(`${BASE_URL}/upload`, {
     method: "POST",
     body:   form,
@@ -49,19 +50,28 @@ export async function queryDocuments(
   return res.json()
 }
 
-export async function deleteDocument(filename) {
+export async function deleteDocument(filename, userId, mode = "archive") {
   const encoded = encodeURIComponent(filename)
-  const res = await fetch(`${BASE_URL}/documents/${encoded}`, {
-    method: "DELETE",
-  })
+  const res = await fetch(
+    `${BASE_URL}/documents/${encoded}?user_id=${encodeURIComponent(userId)}&mode=${mode}`,
+    { method: "DELETE" }
+  )
   if (!res.ok) throw new Error("Delete failed")
   return res.json()
 }
 
+export async function restoreDocument(filename, userId) {
+  const encoded = encodeURIComponent(filename)
+  const res = await fetch(
+    `${BASE_URL}/documents/${encoded}/restore?user_id=${encodeURIComponent(userId)}`,
+    { method: "POST" }
+  )
+  if (!res.ok) throw new Error("Restore failed")
+  return res.json()
+}
+
 export async function resetDatabase() {
-  const res = await fetch(`${BASE_URL}/reset`, {
-    method: "DELETE",
-  })
+  const res = await fetch(`${BASE_URL}/reset`, { method: "DELETE" })
   if (!res.ok) throw new Error("Reset failed")
   return res.json()
 }

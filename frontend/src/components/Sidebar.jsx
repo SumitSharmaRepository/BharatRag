@@ -23,11 +23,21 @@ export function AgentBadge({ agent }) {
   )
 }
 
-export default function Sidebar({ documents, onUpload, onDelete, onDeleteAll }) {
-  const [uploadState, setUploadState] = useState("idle") // "idle"|"progress"|"done"|"failed"
-  const [dragOver,    setDragOver]    = useState(false)
-  const [error,       setError]       = useState("")
+export default function Sidebar({
+  documents,        // { active: string[], archived: string[] }
+  userId,
+  onUpload,         // () => void — called after successful upload
+  onDeleteRequest,  // (doc: string) => void — opens delete modal
+  onRestore,        // (doc: string) => void — restores archived doc
+}) {
+  const [uploadState,      setUploadState]      = useState("idle")
+  const [dragOver,         setDragOver]         = useState(false)
+  const [error,            setError]            = useState("")
+  const [archivedExpanded, setArchivedExpanded] = useState(false)
   const inputRef = useRef()
+
+  const active   = documents?.active   || []
+  const archived = documents?.archived || []
 
   async function handleFile(file) {
     if (!file || !file.name.endsWith(".pdf")) {
@@ -38,10 +48,10 @@ export default function Sidebar({ documents, onUpload, onDelete, onDeleteAll }) 
     if (inputRef.current) inputRef.current.value = ""
     setUploadState("progress")
     try {
-      const result = await uploadDocument(file)
+      await uploadDocument(file, userId)
       setUploadState("done")
       setTimeout(() => {
-        onUpload(result)
+        onUpload()
         setUploadState("idle")
       }, 1500)
     } catch (e) {
@@ -66,7 +76,7 @@ export default function Sidebar({ documents, onUpload, onDelete, onDeleteAll }) 
       border-r border-slate-200 dark:border-slate-800
       transition-colors duration-200
     ">
-      {/* Section title */}
+      {/* ── Active documents ── */}
       <div>
         <p className="
           text-xs font-semibold uppercase
@@ -75,34 +85,31 @@ export default function Sidebar({ documents, onUpload, onDelete, onDeleteAll }) 
           flex items-center justify-between
         ">
           Documents
-          {documents.length > 0 && (
+          {active.length > 0 && (
             <span className="
               bg-brand text-white text-xs
               px-1.5 py-0.5 rounded-full
               font-normal normal-case
             ">
-              {documents.length}
+              {active.length}
             </span>
           )}
         </p>
 
-        {documents.length === 0 ? (
-          <p className="text-xs italic
-            text-slate-400 dark:text-slate-500">
+        {active.length === 0 ? (
+          <p className="text-xs italic text-slate-400 dark:text-slate-500">
             No documents yet
           </p>
         ) : (
           <ul className="flex flex-col gap-2">
-            {documents.map(doc => (
+            {active.map(doc => (
               <li key={doc} className="
                 flex items-center gap-2
                 rounded-lg px-3 py-2
                 bg-slate-50 dark:bg-slate-800
                 group
               ">
-                <span className="text-brand text-sm shrink-0">
-                  &#128196;
-                </span>
+                <span className="text-brand text-sm shrink-0">&#128196;</span>
                 <div className="flex-1 min-w-0">
                   <p className="
                     text-xs font-medium truncate
@@ -112,7 +119,7 @@ export default function Sidebar({ documents, onUpload, onDelete, onDeleteAll }) 
                   </p>
                 </div>
                 <button
-                  onClick={() => onDelete(doc)}
+                  onClick={() => onDeleteRequest(doc)}
                   className="
                     opacity-0 group-hover:opacity-100
                     text-slate-400 hover:text-red-500
@@ -128,22 +135,63 @@ export default function Sidebar({ documents, onUpload, onDelete, onDeleteAll }) 
             ))}
           </ul>
         )}
-
-        {documents.length > 1 && (
-          <button
-            onClick={onDeleteAll}
-            className="
-              text-xs text-slate-400
-              hover:text-red-500
-              transition-colors mt-1
-            "
-          >
-            Clear all documents
-          </button>
-        )}
       </div>
 
-      {/* Upload zone */}
+      {/* ── Archived documents ── */}
+      {archived.length > 0 && (
+        <div>
+          <button
+            onClick={() => setArchivedExpanded(e => !e)}
+            className="
+              text-xs font-semibold uppercase tracking-wide
+              text-slate-400 dark:text-slate-500
+              flex items-center gap-1 w-full
+              hover:text-slate-600 dark:hover:text-slate-300
+              transition-colors
+            "
+          >
+            <span>Archived ({archived.length})</span>
+            <span className="ml-auto">{archivedExpanded ? "▲" : "▼"}</span>
+          </button>
+
+          {archivedExpanded && (
+            <ul className="flex flex-col gap-2 mt-2">
+              {archived.map(doc => (
+                <li key={doc} className="
+                  flex items-center gap-2
+                  rounded-lg px-3 py-2
+                  bg-slate-50 dark:bg-slate-800
+                  opacity-60
+                ">
+                  <span className="text-slate-400 text-sm shrink-0">&#128196;</span>
+                  <div className="flex-1 min-w-0">
+                    <p className="
+                      text-xs font-medium truncate
+                      text-slate-500 dark:text-slate-400
+                    ">
+                      {doc}
+                    </p>
+                  </div>
+                  <button
+                    onClick={() => onRestore(doc)}
+                    className="
+                      text-xs text-brand
+                      hover:text-brand/80
+                      transition-colors shrink-0 px-1
+                    "
+                    title="Restore document"
+                    aria-label={`Restore ${doc}`}
+                  >
+                    ↩
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
+
+      {/* ── Upload zone ── */}
       <div
         onDrop={onDrop}
         onDragOver={e => { e.preventDefault(); uploadState === "idle" && setDragOver(true) }}
@@ -184,12 +232,10 @@ export default function Sidebar({ documents, onUpload, onDelete, onDeleteAll }) 
         <p className="text-xs text-red-500 px-1">{error}</p>
       )}
 
-      {/* Stats */}
-      <div className="mt-auto pt-4
-        border-t border-slate-100 dark:border-slate-800">
-        <p className="text-xs
-          text-slate-400 dark:text-slate-500">
-          {documents.length} document(s) indexed
+      {/* ── Stats ── */}
+      <div className="mt-auto pt-4 border-t border-slate-100 dark:border-slate-800">
+        <p className="text-xs text-slate-400 dark:text-slate-500">
+          {active.length} document(s) indexed
         </p>
       </div>
     </aside>

@@ -5,7 +5,7 @@ import { useState, useRef, useEffect, startTransition  } from "react"
 import Message from "./Message"
 import { useStream } from "../hooks/useStream"
 
-export default function Chat({ language }) {
+export default function Chat({ language, userId = "default_user" }) {
   const [messages, setMessages] = useState([
     {
       id:      "welcome",
@@ -38,7 +38,6 @@ export default function Chat({ language }) {
     const q = input.trim()
     if (!q || loading) return
 
-    const userId    = "bharatrag_user"
     const msgId     = Date.now()
     const streamId  = msgId + 1
 

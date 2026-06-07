@@ -1,41 +1,51 @@
 // ============================================
 // App.jsx — root component
 // ============================================
-import { useState, useEffect } from "react"
+import { useState, useEffect, useRef } from "react"
 import Header from "./components/Header"
 import Sidebar from "./components/Sidebar"
 import Chat from "./components/Chat"
 import ThemeToggle from "./components/ThemeToggle"
-import { checkHealth, listDocuments, deleteDocument } from "./api/bharatrag"
+import DeleteModal from "./components/DeleteModal"
+import {
+  checkHealth,
+  listDocuments,
+  deleteDocument,
+  restoreDocument,
+} from "./api/bharatrag"
 
 export default function App() {
-  const [language, setLanguage] = useState("English")
-  const [apiStatus, setApiStatus] = useState("checking")
-  const [documents, setDocuments] = useState([])
-  const [dark, setDark] = useState(false)
+  // ── User identity ──────────────────────────
+  // UUID lives in a ref: survives re-renders, lost on tab close (no localStorage).
+  const userIdRef = useRef(null)
+  if (userIdRef.current === null) {
+    userIdRef.current = crypto.randomUUID()
+  }
 
-  // Pre-wake the Render server while the user is still choosing a file
-  useEffect(() => {
-    const BASE_URL = import.meta.env.VITE_API_URL || ""
-    fetch(`${BASE_URL}/health`).catch(() => {})
-  }, [])
+  // ── State ──────────────────────────────────
+  const [language,   setLanguage]   = useState("English")
+  const [apiStatus,  setApiStatus]  = useState("checking")
+  const [documents,  setDocuments]  = useState({ active: [], archived: [] })
+  const [dark,       setDark]       = useState(false)
+  const [deleteTarget, setDeleteTarget] = useState(null)  // doc name string | null
 
-  // Apply dark class to html element
+  // ── Dark mode ──────────────────────────────
   useEffect(() => {
-    if (dark) {
-      document.documentElement.classList.add("dark")
-    } else {
-      document.documentElement.classList.remove("dark")
-    }
+    document.documentElement.classList.toggle("dark", dark)
   }, [dark])
 
+  // ── Bootstrap ──────────────────────────────
   useEffect(() => {
+    // Pre-wake the Render server while the user is still reading the UI
+    const BASE_URL = import.meta.env.VITE_API_URL || ""
+    fetch(`${BASE_URL}/health`).catch(() => {})
+
     async function init() {
       try {
         await checkHealth()
         setApiStatus("healthy")
-        const res = await listDocuments()
-        setDocuments(res.documents || [])
+        const res = await listDocuments(userIdRef.current)
+        setDocuments({ active: res.active || [], archived: res.archived || [] })
       } catch {
         setApiStatus("offline")
       }
@@ -43,26 +53,52 @@ export default function App() {
     init()
   }, [])
 
-  function handleUpload(result) {
-    setDocuments(prev =>
-      prev.includes(result.filename)
-        ? prev
-        : [...prev, result.filename]
-    )
-  }
-
-  async function handleDelete(filename) {
+  // ── Document helpers ───────────────────────
+  async function refreshDocuments() {
     try {
-      await deleteDocument(filename)
-      setDocuments(prev => prev.filter(d => d !== filename))
+      const res = await listDocuments(userIdRef.current)
+      setDocuments({ active: res.active || [], archived: res.archived || [] })
     } catch (e) {
-      console.error("Delete failed:", e)
+      console.error("Failed to refresh documents:", e)
     }
   }
 
-  function handleDeleteAll() {
-    documents.forEach(doc => deleteDocument(doc))
-    setDocuments([])
+  function handleUpload() {
+    refreshDocuments()
+  }
+
+  // ── Delete modal handlers ──────────────────
+  function handleDeleteRequest(doc) {
+    setDeleteTarget(doc)
+  }
+
+  async function handleArchive(doc) {
+    setDeleteTarget(null)
+    try {
+      await deleteDocument(doc, userIdRef.current, "archive")
+      await refreshDocuments()
+    } catch (e) {
+      console.error("Archive failed:", e)
+    }
+  }
+
+  async function handlePermanentDelete(doc) {
+    setDeleteTarget(null)
+    try {
+      await deleteDocument(doc, userIdRef.current, "permanent")
+      await refreshDocuments()
+    } catch (e) {
+      console.error("Permanent delete failed:", e)
+    }
+  }
+
+  async function handleRestore(doc) {
+    try {
+      await restoreDocument(doc, userIdRef.current)
+      await refreshDocuments()
+    } catch (e) {
+      console.error("Restore failed:", e)
+    }
   }
 
   return (
@@ -81,17 +117,25 @@ export default function App() {
       <div className="flex flex-1 min-h-0">
         <Sidebar
           documents={documents}
+          userId={userIdRef.current}
           onUpload={handleUpload}
-          onDelete={handleDelete}
-          onDeleteAll={handleDeleteAll}
+          onDeleteRequest={handleDeleteRequest}
+          onRestore={handleRestore}
         />
-        <main className="
-          flex-1 flex flex-col
-          bg-white min-h-0
-        ">
-          <Chat language={language} />
+        <main className="flex-1 flex flex-col bg-white min-h-0">
+          <Chat language={language} userId={userIdRef.current} />
         </main>
       </div>
+
+      {deleteTarget && (
+        <DeleteModal
+          doc={deleteTarget}
+          dark={dark}
+          onArchive={() => handleArchive(deleteTarget)}
+          onPermanent={() => handlePermanentDelete(deleteTarget)}
+          onCancel={() => setDeleteTarget(null)}
+        />
+      )}
     </div>
   )
 }
