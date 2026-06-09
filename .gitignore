@@ -47,3 +47,6 @@ Thumbs.db
 
 # Railway
 .railway/
+
+#Claude prompts
+Claude_Prompts/

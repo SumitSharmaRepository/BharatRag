@@ -46,3 +46,4 @@ presidio-anonymizer
 pytest
 pytest-asyncio
 httpx
+reportlab

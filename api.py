@@ -1,6 +1,8 @@
 import os
 import hashlib
 import tempfile
+import sqlite3
+import uuid as uuid_module
 from datetime import datetime, timezone
 from dotenv import load_dotenv
 load_dotenv()
@@ -53,6 +55,38 @@ app.add_middleware(
 limiter = Limiter(key_func=get_remote_address)
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+
+
+# ── Chat history — SQLite ──────────────────────────────────
+
+CHAT_DB_PATH = "/tmp/bharatrag_chat.db"
+
+def _init_chat_db():
+    conn = sqlite3.connect(CHAT_DB_PATH)
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS chat_messages (
+            id        TEXT PRIMARY KEY,
+            user_id   TEXT NOT NULL,
+            role      TEXT NOT NULL,
+            content   TEXT NOT NULL,
+            sources   TEXT DEFAULT '[]',
+            agent_used TEXT DEFAULT '',
+            timestamp TEXT NOT NULL
+        )
+    """)
+    conn.commit()
+    conn.close()
+
+class SaveMessageBody(BaseModel):
+    user_id:    str
+    role:       str
+    content:    str
+    sources:    list  = []
+    agent_used: str   = ""
+
+class ExportRequest(BaseModel):
+    user_id:  str
+    messages: list
 
 
 # ── Low-level Pinecone helpers ─────────────────────────────
@@ -296,52 +330,58 @@ async def upload_document(
         tmp_path = tmp.name
 
     try:
+        import asyncio
         from langchain_community.document_loaders import PyPDFLoader
         from langchain_text_splitters import RecursiveCharacterTextSplitter
 
-        loader = PyPDFLoader(tmp_path)
-        pages  = loader.load()
+        def _process_and_index():
+            loader = PyPDFLoader(tmp_path)
+            pages  = loader.load()
 
-        for page in pages:
-            page.metadata["doc_name"] = file.filename
+            for page in pages:
+                page.metadata["doc_name"] = file.filename
 
-        splitter = RecursiveCharacterTextSplitter(
-            chunk_size=500, chunk_overlap=100
-        )
-        chunks = splitter.split_documents(pages)
+            splitter = RecursiveCharacterTextSplitter(
+                chunk_size=500, chunk_overlap=100
+            )
+            chunks = splitter.split_documents(pages)
 
-        # ── PII detection + redaction ──────────────
-        pii       = get_pii_detector()
-        pii_found = set()
-        clean_chunks = []
+            # ── PII detection + redaction ──────────
+            pii       = get_pii_detector()
+            pii_found = set()
+            clean_chunks = []
 
-        for chunk in chunks:
-            detected = pii.detect(chunk.page_content)
-            if detected:
-                pii_found.update(detected)
-                chunk.page_content = pii.redact(chunk.page_content)
-            clean_chunks.append(chunk)
+            for chunk in chunks:
+                detected = pii.detect(chunk.page_content)
+                if detected:
+                    pii_found.update(detected)
+                    chunk.page_content = pii.redact(chunk.page_content)
+                clean_chunks.append(chunk)
 
-        if pii_found:
-            print(f"  [security] PII redacted: {pii_found}")
+            if pii_found:
+                print(f"  [security] PII redacted: {pii_found}")
 
-        # ── Stamp metadata ─────────────────────────
-        uploaded_at = datetime.now(timezone.utc).isoformat()
-        for chunk in clean_chunks:
-            chunk.metadata["user_id"]     = user_id
-            chunk.metadata["file_hash"]   = file_hash
-            chunk.metadata["uploaded_at"] = uploaded_at
-            chunk.metadata["archived"]    = False
+            # ── Stamp metadata ─────────────────────
+            uploaded_at = datetime.now(timezone.utc).isoformat()
+            for chunk in clean_chunks:
+                chunk.metadata["user_id"]     = user_id
+                chunk.metadata["file_hash"]   = file_hash
+                chunk.metadata["uploaded_at"] = uploaded_at
+                chunk.metadata["archived"]    = False
 
-        # ── Store in Pinecone ──────────────────────
-        vs = get_vectorstore()
-        vs.add_documents(clean_chunks)
+            # ── Embed + upsert to Pinecone ─────────
+            vs = get_vectorstore()
+            vs.add_documents(clean_chunks)
+
+            return len(pages), len(clean_chunks)
+
+        pages_count, chunk_count = await asyncio.to_thread(_process_and_index)
 
         return UploadResponse(
             filename=file.filename,
-            pages=len(pages),
-            chunks=len(clean_chunks),
-            total_chunks=get_pinecone_chunk_count(),
+            pages=pages_count,
+            chunks=chunk_count,
+            total_chunks=chunk_count,
             message=f"Indexed {file.filename}",
             status="new",
         )
@@ -535,6 +575,12 @@ Answer:"""
                 for text_chunk in stream.text_stream:
                     yield "data: " + json.dumps({"chunk": text_chunk}) + "\n\n"
 
+            unique_sources = list(set(sources))
+            yield "data: " + json.dumps({
+                "done":       True,
+                "sources":    unique_sources,
+                "agent_used": "RAGPipeline",
+            }) + "\n\n"
             yield ": padding\n\n"
             yield "data: [DONE]\n\n"
 
@@ -609,12 +655,284 @@ def reset_database():
         raise HTTPException(500, f"Error: {str(e)}")
 
 
+# ── PDF generation ────────────────────────────────────────
+
+def _escape_para(text: str) -> str:
+    return (
+        text.replace("&", "&amp;")
+            .replace("<", "&lt;")
+            .replace(">", "&gt;")
+            .replace("\n", "<br/>")
+    )
+
+def _generate_chat_pdf(messages: list, export_time: str) -> bytes:
+    from reportlab.lib.pagesizes import A4
+    from reportlab.lib.colors import HexColor, white
+    from reportlab.lib.styles import ParagraphStyle
+    from reportlab.lib.units import cm, mm
+    from reportlab.platypus import (
+        SimpleDocTemplate, Paragraph, Spacer,
+        Table, TableStyle, HRFlowable,
+    )
+    from reportlab.lib.enums import TA_RIGHT, TA_CENTER
+    from io import BytesIO
+
+    buf = BytesIO()
+    PAGE_W, _ = A4
+    doc = SimpleDocTemplate(
+        buf, pagesize=A4,
+        leftMargin=2*cm, rightMargin=2*cm,
+        topMargin=1.5*cm, bottomMargin=2*cm,
+    )
+    W = PAGE_W - 4*cm
+
+    C_DARK   = HexColor("#0f172a")
+    C_PURPLE = HexColor("#6366f1")
+    C_SLATE  = HexColor("#64748b")
+    C_TEXT   = HexColor("#1e293b")
+    C_BG     = HexColor("#f8fafc")
+    C_MUTED  = HexColor("#94a3b8")
+
+    S = {
+        "title": ParagraphStyle("t",  fontName="Helvetica-Bold",    fontSize=20, textColor=white),
+        "sub":   ParagraphStyle("s",  fontName="Helvetica",         fontSize=11, textColor=C_PURPLE),
+        "date":  ParagraphStyle("d",  fontName="Helvetica",         fontSize=9,  textColor=C_MUTED, alignment=TA_RIGHT),
+        "you":   ParagraphStyle("y",  fontName="Helvetica-Bold",    fontSize=8,  textColor=C_SLATE),
+        "brag":  ParagraphStyle("br", fontName="Helvetica-Bold",    fontSize=8,  textColor=C_PURPLE),
+        "msg":   ParagraphStyle("m",  fontName="Helvetica",         fontSize=10, textColor=C_TEXT,   leading=15),
+        "src":   ParagraphStyle("sr", fontName="Helvetica-Oblique", fontSize=8,  textColor=C_SLATE),
+        "foot":  ParagraphStyle("f",  fontName="Helvetica",         fontSize=8,  textColor=C_MUTED,  alignment=TA_CENTER),
+        "ts":    ParagraphStyle("ts", fontName="Helvetica",         fontSize=8,  textColor=C_MUTED,  alignment=TA_RIGHT),
+        "bullet": ParagraphStyle("bl", fontName="Helvetica",        fontSize=10, textColor=C_TEXT,   leading=15, leftIndent=14),
+    }
+
+    def _md(text: str) -> list:
+        """Convert markdown to a list of ReportLab Paragraphs."""
+        import re
+
+        def escape(s: str) -> str:
+            return s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+
+        def inline(s: str) -> str:
+            s = escape(s)
+            s = re.sub(r'\*\*(.+?)\*\*', r'<b>\1</b>', s)
+            s = re.sub(r'(?<!\*)\*(?!\*)(.+?)(?<!\*)\*(?!\*)', r'<i>\1</i>', s)
+            return s
+
+        result = []
+        for block in re.split(r'\n{2,}', text.strip()):
+            pending = []
+            for line in block.split("\n"):
+                if line.startswith("- "):
+                    if pending:
+                        result.append(Paragraph(inline(" ".join(pending)), S["msg"]))
+                        pending = []
+                    result.append(Paragraph(f"• {inline(line[2:].strip())}", S["bullet"]))
+                else:
+                    pending.append(line)
+            if pending:
+                result.append(Paragraph(inline(" ".join(pending)), S["msg"]))
+        return result or [Paragraph("", S["msg"])]
+
+    story = []
+
+    # Header — single full-width column guarantees background fill
+    hdr = Table(
+        [[
+            [
+                Paragraph("BharatRAG", S["title"]),
+                Paragraph("Chat Export", S["sub"]),
+                Paragraph(export_time, S["date"]),
+            ]
+        ]],
+        colWidths=[W],
+    )
+    hdr.setStyle(TableStyle([
+        ("BACKGROUND",    (0,0), (-1,-1), C_DARK),
+        ("LEFTPADDING",   (0,0), (-1,-1), 16),
+        ("RIGHTPADDING",  (0,0), (-1,-1), 16),
+        ("TOPPADDING",    (0,0), (-1,-1), 14),
+        ("BOTTOMPADDING", (0,0), (-1,-1), 14),
+        ("VALIGN",        (0,0), (-1,-1), "TOP"),
+    ]))
+    story.append(hdr)
+    story.append(HRFlowable(width="100%", thickness=3, color=C_PURPLE, spaceAfter=10))
+
+    # Drop the welcome message (always first, always assistant)
+    filtered = messages[1:] if messages and messages[0].get("role") == "assistant" else messages
+
+    # Messages — flat tables with SPAN to avoid nested-width overflow
+    for msg in filtered:
+        role      = msg.get("role", "user")
+        content   = msg.get("content", "")
+        sources   = msg.get("sources", [])
+        timestamp = msg.get("timestamp", "")
+
+        if not content:
+            continue
+
+        ts_str = ""
+        if timestamp:
+            try:
+                dt = datetime.fromisoformat(timestamp.replace("Z", "+00:00"))
+                ts_str = dt.strftime("%d %b %Y, %I:%M %p")
+            except Exception:
+                ts_str = timestamp
+
+        content_paras = _md(content)
+
+        if role == "user":
+            # 2-col flat table: row 0 = [label | ts], row 1 = [content SPAN]
+            rows = [
+                [Paragraph("YOU", S["you"]), Paragraph(ts_str, S["ts"])],
+                [content_paras, ""],
+            ]
+            box = Table(rows, colWidths=[W * 0.65, W * 0.35])
+            box.setStyle(TableStyle([
+                ("SPAN",          (0,1),  (-1,1)),
+                ("BACKGROUND",    (0,0),  (-1,-1), C_BG),
+                ("LEFTPADDING",   (0,0),  (-1,-1), 12),
+                ("RIGHTPADDING",  (0,0),  (-1,-1), 12),
+                ("TOPPADDING",    (0,0),  (-1,0),  8),
+                ("BOTTOMPADDING", (0,0),  (-1,0),  4),
+                ("TOPPADDING",    (0,1),  (-1,-1), 4),
+                ("BOTTOMPADDING", (0,-1), (-1,-1), 10),
+            ]))
+            story.append(box)
+
+        else:
+            # 3-col flat table: col 0 = purple border strip (4 pt)
+            # row 0 = [border | label | ts]
+            # row 1 = [border | content SPAN]
+            # row 2 = [border | sources SPAN]  (optional)
+            BORD = 4
+            CW   = [BORD, (W - BORD) * 0.65, (W - BORD) * 0.35]
+            rows = [
+                ["", Paragraph("BHARATRAG", S["brag"]), Paragraph(ts_str, S["ts"])],
+                ["", content_paras, ""],
+            ]
+            span_cmds = [("SPAN", (1,1), (2,1))]
+            if sources:
+                src_text = ", ".join(str(s) for s in sources)
+                rows.append(["", Paragraph(f"Source: {_escape_para(src_text)}", S["src"]), ""])
+                span_cmds.append(("SPAN", (1,2), (2,2)))
+
+            box = Table(rows, colWidths=CW)
+            box.setStyle(TableStyle([
+                # Border strip
+                ("BACKGROUND",    (0,0),  (0,-1), C_PURPLE),
+                ("LEFTPADDING",   (0,0),  (0,-1), 0),
+                ("RIGHTPADDING",  (0,0),  (0,-1), 0),
+                ("TOPPADDING",    (0,0),  (0,-1), 0),
+                ("BOTTOMPADDING", (0,0),  (0,-1), 0),
+                # Content area
+                ("BACKGROUND",    (1,0),  (-1,-1), white),
+                ("LEFTPADDING",   (1,0),  (-1,-1), 10),
+                ("RIGHTPADDING",  (1,0),  (-1,-1), 10),
+                ("TOPPADDING",    (1,0),  (-1,0),  8),
+                ("BOTTOMPADDING", (1,0),  (-1,0),  4),
+                ("TOPPADDING",    (1,1),  (-1,-1), 4),
+                ("BOTTOMPADDING", (1,-1), (-1,-1), 8),
+                ("VALIGN",        (0,0),  (-1,-1), "TOP"),
+                *span_cmds,
+            ]))
+            story.append(box)
+
+        story.append(Spacer(1, 8))
+
+    # Footer
+    story.append(HRFlowable(width="100%", thickness=1, color=C_SLATE, spaceBefore=6, spaceAfter=6))
+    story.append(Paragraph("Generated by BharatRAG", S["foot"]))
+    story.append(Paragraph("https://bharat-rag.vercel.app", S["foot"]))
+    story.append(Paragraph(f"{len(filtered)} messages exported", S["foot"]))
+
+    doc.build(story)
+    buf.seek(0)
+    return buf.read()
+
+
+# ── Chat history endpoints ─────────────────────────────────
+
+@app.get("/chat/history")
+@limiter.limit("30/minute")
+async def get_chat_history(request: Request, user_id: str, limit: int = 50):
+    conn = sqlite3.connect(CHAT_DB_PATH)
+    conn.row_factory = sqlite3.Row
+    rows = conn.execute(
+        "SELECT * FROM chat_messages WHERE user_id = ? ORDER BY timestamp ASC LIMIT ?",
+        (user_id, limit),
+    ).fetchall()
+    conn.close()
+    msgs = [dict(r) for r in rows]
+    for m in msgs:
+        m["sources"] = json.loads(m["sources"])
+    return msgs
+
+
+@app.post("/chat/save")
+@limiter.limit("30/minute")
+async def save_chat_message(request: Request, body: SaveMessageBody):
+    msg_id    = str(uuid_module.uuid4())
+    timestamp = datetime.now(timezone.utc).isoformat()
+    conn = sqlite3.connect(CHAT_DB_PATH)
+    conn.execute(
+        "INSERT INTO chat_messages (id, user_id, role, content, sources, agent_used, timestamp) VALUES (?, ?, ?, ?, ?, ?, ?)",
+        (msg_id, body.user_id, body.role, body.content, json.dumps(body.sources), body.agent_used, timestamp),
+    )
+    conn.commit()
+    conn.close()
+    return {"id": msg_id, "saved": True}
+
+
+@app.delete("/chat/clear")
+@limiter.limit("5/hour")
+async def clear_chat_history(request: Request, user_id: str):
+    conn    = sqlite3.connect(CHAT_DB_PATH)
+    result  = conn.execute("DELETE FROM chat_messages WHERE user_id = ?", (user_id,))
+    count   = result.rowcount
+    conn.commit()
+    conn.close()
+    return {"cleared": True, "count": count}
+
+
+@app.post("/chat/export")
+@limiter.limit("10/hour")
+async def export_chat_pdf(request: Request, body: ExportRequest):
+    try:
+        export_time = datetime.now(timezone.utc).strftime("%d %b %Y, %I:%M %p UTC")
+        date_str    = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M")
+        pdf_bytes   = _generate_chat_pdf(body.messages, export_time)
+        return StreamingResponse(
+            iter([pdf_bytes]),
+            media_type="application/pdf",
+            headers={"Content-Disposition": f'attachment; filename="BharatRAG_Chat_{date_str}.pdf"'},
+        )
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(500, f"PDF generation failed: {str(e)}")
+
+
 @app.on_event("startup")
 async def startup_event():
+    _init_chat_db()
     print("BharatRAG API starting...", flush=True)
     print(f"Model:     claude-sonnet-4-5", flush=True)
     print(f"Vector DB: Pinecone ({PINECONE_INDEX})", flush=True)
-    print("API ready — embeddings load on first request", flush=True)
+
+    # Pre-warm both Pinecone connections so the first upload doesn't pay init cost
+    try:
+        import asyncio
+        loop = asyncio.get_event_loop()
+        await loop.run_in_executor(None, lambda: (
+            _get_pinecone_index(),                  # index singleton
+            get_embeddings().embed_query("warmup"), # embeddings + inference client
+        ))
+        print("Pinecone clients warmed up", flush=True)
+    except Exception as e:
+        print(f"Warmup skipped: {e}", flush=True)
+
+    print("API ready", flush=True)
     print(f"Docs at /docs", flush=True)
 
 

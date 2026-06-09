@@ -75,3 +75,53 @@ export async function resetDatabase() {
   if (!res.ok) throw new Error("Reset failed")
   return res.json()
 }
+
+export async function getChatHistory(userId, limit = 50) {
+  const res = await fetch(
+    `${BASE_URL}/chat/history?user_id=${encodeURIComponent(userId)}&limit=${limit}`
+  )
+  if (!res.ok) throw new Error("Failed to fetch chat history")
+  return res.json()
+}
+
+export async function saveChatMessage(userId, role, content, sources = [], agentUsed = "") {
+  const res = await fetch(`${BASE_URL}/chat/save`, {
+    method:  "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      user_id:    userId,
+      role,
+      content,
+      sources,
+      agent_used: agentUsed,
+    }),
+  })
+  if (!res.ok) throw new Error("Failed to save message")
+  return res.json()
+}
+
+export async function clearChatHistory(userId) {
+  const res = await fetch(
+    `${BASE_URL}/chat/clear?user_id=${encodeURIComponent(userId)}`,
+    { method: "DELETE" }
+  )
+  if (!res.ok) throw new Error("Failed to clear chat history")
+  return res.json()
+}
+
+export async function exportChatPDF(userId, messages) {
+  const res = await fetch(`${BASE_URL}/chat/export`, {
+    method:  "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ user_id: userId, messages }),
+  })
+  if (!res.ok) throw new Error("Export failed")
+  const date = new Date().toISOString().slice(0, 10).replace(/-/g, "")
+  const blob = await res.blob()
+  const url  = URL.createObjectURL(blob)
+  const a    = document.createElement("a")
+  a.href     = url
+  a.download = `BharatRAG_Chat_${date}.pdf`
+  a.click()
+  setTimeout(() => URL.revokeObjectURL(url), 1000)
+}

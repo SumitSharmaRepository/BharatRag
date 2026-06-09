@@ -83,9 +83,9 @@ export function useStream() {
           onChunk?.(data.chunk)
         }
 
-        if (data.done && data.sources) {
-          // Stream finished — update sources
-          onSources?.(data.sources, data.agent_used)
+        if (data.done) {
+          // Stream finished — update sources (may be empty)
+          onSources?.(data.sources || [], data.agent_used || null)
         }
 
       } catch (e) {

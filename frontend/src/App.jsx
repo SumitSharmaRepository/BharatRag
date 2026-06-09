@@ -16,10 +16,12 @@ import {
 
 export default function App() {
   // ── User identity ──────────────────────────
-  // UUID lives in a ref: survives re-renders, lost on tab close (no localStorage).
+  // UUID persisted in localStorage so history and documents survive hard reloads.
   const userIdRef = useRef(null)
   if (userIdRef.current === null) {
-    userIdRef.current = crypto.randomUUID()
+    const stored = localStorage.getItem("bharatrag_user_id")
+    userIdRef.current = stored ?? crypto.randomUUID()
+    if (!stored) localStorage.setItem("bharatrag_user_id", userIdRef.current)
   }
 
   // ── State ──────────────────────────────────

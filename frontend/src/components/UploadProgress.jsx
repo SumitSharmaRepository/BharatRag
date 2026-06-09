@@ -9,7 +9,8 @@ const STAGES = [
 ]
 
 // Cumulative ms from upload start to enter each stage after stage 0
-const ADVANCE_MS = [5000, 14000, 27000, 42000]
+// Spread across ~90s to match Render cold-start (30-60s) + embedding time
+const ADVANCE_MS = [12000, 28000, 50000, 72000]
 
 export default function UploadProgress({ uploadState }) {
   const [stageIdx, setStageIdx] = useState(0)
