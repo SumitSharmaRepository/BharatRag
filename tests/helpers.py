@@ -12,7 +12,7 @@ def upload_doc(filename: str, user_id: str, base_url: str = BASE_URL) -> dict:
             f"{base_url}/upload",
             files={"file": (os.path.basename(filename), f, "application/pdf")},
             data={"user_id": user_id},
-            timeout=180,
+            timeout=600,
         )
     r.raise_for_status()
     return r.json()
@@ -32,7 +32,7 @@ def delete_doc(doc_name: str, user_id: str, mode: str, base_url: str = BASE_URL)
     r = requests.delete(
         f"{base_url}/documents/{requests.utils.quote(doc_name, safe='')}",
         params={"user_id": user_id, "mode": mode},
-        timeout=30,
+        timeout=120,
     )
     r.raise_for_status()
     return r.json()

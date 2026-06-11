@@ -1,4 +1,5 @@
 import os
+import asyncio
 import hashlib
 import tempfile
 import sqlite3
@@ -108,7 +109,7 @@ def _get_chunks_for_doc(index, user_id: str, doc_name: str) -> list[str]:
     """Return all vector IDs for a user's document (any archived state)."""
     result = index.query(
         vector=_DUMMY_VEC,
-        top_k=500,
+        top_k=10000,
         include_metadata=True,
         filter={
             "user_id":  {"$eq": user_id},
@@ -118,9 +119,15 @@ def _get_chunks_for_doc(index, user_id: str, doc_name: str) -> list[str]:
     return [m["id"] for m in result.get("matches", [])]
 
 def _update_chunks_archived(index, chunk_ids: list[str], archived: bool) -> None:
-    """Partial-update the archived flag on a list of vector IDs."""
-    for chunk_id in chunk_ids:
-        index.update(id=chunk_id, set_metadata={"archived": archived})
+    """Partial-update the archived flag on all chunk IDs in parallel."""
+    from concurrent.futures import ThreadPoolExecutor, as_completed
+    with ThreadPoolExecutor(max_workers=20) as pool:
+        futures = [
+            pool.submit(index.update, id=cid, set_metadata={"archived": archived})
+            for cid in chunk_ids
+        ]
+        for f in as_completed(futures):
+            f.result()
 
 
 # ── Higher-level helpers ───────────────────────────────────
@@ -241,7 +248,7 @@ class DocumentsResponse(BaseModel):
 
 # ── Endpoints ─────────────────────────────────────────────
 
-@app.get("/health", response_model=HealthResponse)
+@app.api_route("/health", methods=["GET", "HEAD"], response_model=HealthResponse)
 def health_check():
     chunks = get_pinecone_chunk_count()
     return HealthResponse(
@@ -266,8 +273,11 @@ def list_documents(request: Request, user_id: str = "default_user"):
         raise HTTPException(500, f"Error: {str(e)}")
 
 
+_UPLOAD_RATE = os.getenv("UPLOAD_RATE_LIMIT", "5/hour")
+_DELETE_RATE = os.getenv("DELETE_RATE_LIMIT", "10/hour")
+
 @app.post("/upload", response_model=UploadResponse)
-@limiter.limit("5/hour")
+@limiter.limit(_UPLOAD_RATE)
 async def upload_document(
     request: Request,
     file:    UploadFile = File(...),
@@ -280,6 +290,8 @@ async def upload_document(
 
     # ── Read bytes + fingerprint ───────────────────
     file_bytes = await file.read()
+    if not file_bytes:
+        raise HTTPException(400, "Empty file")
     file_hash  = hashlib.sha256(file_bytes).hexdigest()
 
     # ── Dedup check ────────────────────────────────
@@ -309,14 +321,14 @@ async def upload_document(
 
         # Restore all archived chunks for this file_hash
         all_chunks = index.query(
-            vector=_DUMMY_VEC, top_k=500, include_metadata=True,
+            vector=_DUMMY_VEC, top_k=10000, include_metadata=True,
             filter={
                 "user_id":   {"$eq": user_id},
                 "file_hash": {"$eq": file_hash},
             },
         )
         chunk_ids = [m["id"] for m in all_chunks.get("matches", [])]
-        _update_chunks_archived(index, chunk_ids, False)
+        await asyncio.to_thread(_update_chunks_archived, index, chunk_ids, False)
         return UploadResponse(
             filename=file.filename, pages=0, chunks=len(chunk_ids),
             total_chunks=get_pinecone_chunk_count(),
@@ -330,7 +342,6 @@ async def upload_document(
         tmp_path = tmp.name
 
     try:
-        import asyncio
         from langchain_community.document_loaders import PyPDFLoader
         from langchain_text_splitters import RecursiveCharacterTextSplitter
 
@@ -600,7 +611,7 @@ Answer:"""
 
 
 @app.delete("/documents/{doc_name}")
-@limiter.limit("10/hour")
+@limiter.limit(_DELETE_RATE)
 async def delete_document(
     request:  Request,
     doc_name: str,
@@ -620,9 +631,10 @@ async def delete_document(
             get_cache().clear()
             return {"message": f"Permanently deleted {doc_name}", "status": "deleted"}
 
-        # Archive: flip archived=True on all chunks
-        chunk_ids = _get_chunks_for_doc(index, user_id, doc_name)
-        _update_chunks_archived(index, chunk_ids, True)
+        # Archive: flip archived=True on all chunks (blocking — run in thread)
+        chunk_ids = await asyncio.to_thread(_get_chunks_for_doc, index, user_id, doc_name)
+        await asyncio.to_thread(_update_chunks_archived, index, chunk_ids, True)
+        get_cache().clear()
         return {"message": f"Archived {doc_name}", "status": "archived"}
 
     except Exception as e:
@@ -630,7 +642,7 @@ async def delete_document(
 
 
 @app.post("/documents/{doc_name}/restore")
-@limiter.limit("10/hour")
+@limiter.limit(_DELETE_RATE)
 async def restore_document(
     request:  Request,
     doc_name: str,
@@ -638,8 +650,9 @@ async def restore_document(
 ):
     try:
         index     = _get_pinecone_index()
-        chunk_ids = _get_chunks_for_doc(index, user_id, doc_name)
-        _update_chunks_archived(index, chunk_ids, False)
+        chunk_ids = await asyncio.to_thread(_get_chunks_for_doc, index, user_id, doc_name)
+        await asyncio.to_thread(_update_chunks_archived, index, chunk_ids, False)
+        get_cache().clear()
         return {"message": f"Restored {doc_name}", "status": "restored"}
     except Exception as e:
         raise HTTPException(500, f"Error: {str(e)}")
@@ -896,7 +909,7 @@ async def clear_chat_history(request: Request, user_id: str):
 
 
 @app.post("/chat/export")
-@limiter.limit("10/hour")
+@limiter.limit(_DELETE_RATE)
 async def export_chat_pdf(request: Request, body: ExportRequest):
     try:
         export_time = datetime.now(timezone.utc).strftime("%d %b %Y, %I:%M %p UTC")
